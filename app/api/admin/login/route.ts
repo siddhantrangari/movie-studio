@@ -5,15 +5,18 @@ export async function POST(req: NextRequest) {
   try {
     const { password } = await req.json()
 
+    console.log("LOGIN DEBUG: input password =", password)
+    console.log("LOGIN DEBUG: process.env.ADMIN_PASSWORD_HASH =", process.env.ADMIN_PASSWORD_HASH)
+
     if (!password) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
 
     const valid = await verifyPassword(password)
+    console.log("LOGIN DEBUG: password is valid =", valid)
 
     if (!valid) {
-      // Always same error — don't reveal whether user/pass is wrong
-      await new Promise(r => setTimeout(r, 800)) // timing attack mitigation
+      await new Promise(r => setTimeout(r, 800))
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
 
@@ -30,7 +33,8 @@ export async function POST(req: NextRequest) {
     })
 
     return res
-  } catch {
+  } catch (err: any) {
+    console.error("LOGIN ERROR:", err)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }
