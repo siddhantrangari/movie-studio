@@ -46,6 +46,87 @@ type Character = {
 const label = { fontSize: '10px', color: '#96A3B6', textTransform: 'uppercase' as const, letterSpacing: '0.08em', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }
 const input = { width: '100%', padding: '0.6rem 0.8rem', borderRadius: '0.5rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '13px', outline: 'none' }
 
+/**
+ * Creates a character without leaving the canvas. The picker above is useless
+ * on a fresh install otherwise — there is nothing to pick.
+ */
+function NewCharacterForm({ onCreated }: { onCreated: (c: Character) => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const save = async () => {
+    if (!name.trim()) return
+    setSaving(true); setErr(null)
+    try {
+      const fd = new FormData()
+      fd.append('name', name.trim())
+      fd.append('description', description.trim())
+      if (file) fd.append('image', file)
+      const res = await fetch('/api/admin/videogen/characters', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Could not save')
+      onCreated(data.character)
+      setName(''); setDescription(''); setFile(null); setOpen(false)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{
+        width: '100%', padding: '0.5rem', borderRadius: '0.5rem', cursor: 'pointer',
+        border: '1px dashed #1a3050', background: 'transparent', color: '#E8B94A',
+        fontSize: '11px', fontWeight: 700,
+      }}>
+        + New character
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ padding: '0.85rem', borderRadius: '0.5rem', border: '1px dashed #1a3050', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      <div>
+        <label style={label}>Name</label>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Meera" style={input} />
+      </div>
+      <div>
+        <label style={label}>Appearance</label>
+        <input value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="Indian woman, late 20s, emerald saree" style={input} />
+      </div>
+      <div>
+        <label style={label}>Reference image</label>
+        <input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] ?? null)}
+          style={{ ...input, padding: '0.4rem', fontSize: '11px' }} />
+      </div>
+      {err && <p style={{ fontSize: '11px', color: '#f87171' }}>{err}</p>}
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button onClick={save} disabled={saving || !name.trim()} style={{
+          flex: 1, padding: '0.5rem', borderRadius: '0.4rem', border: 'none',
+          background: name.trim() ? '#E8B94A' : '#1a2840',
+          color: name.trim() ? '#0A1220' : '#64748b',
+          fontSize: '11px', fontWeight: 700, cursor: saving || !name.trim() ? 'not-allowed' : 'pointer',
+        }}>
+          {saving ? 'Saving…' : 'Save character'}
+        </button>
+        <button onClick={() => setOpen(false)} style={{
+          padding: '0.5rem 0.8rem', borderRadius: '0.4rem', cursor: 'pointer',
+          border: '1px solid #1a2840', background: 'transparent', color: '#96A3B6', fontSize: '11px',
+        }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function CanvasClient() {
   const [nodes, setNodes] = useState<CanvasNode[]>([])
   const [edges, setEdges] = useState<CanvasEdge[]>([])
@@ -546,6 +627,18 @@ export default function CanvasClient() {
                     style={{ width: '100%', height: '140px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #1a2840' }} />
                 </div>
               )}
+
+              <NewCharacterForm
+                onCreated={(c) => {
+                  setCharacters(prev => [...prev, c])
+                  updateNodeData(selectedNode.id, {
+                    characterId: c.id,
+                    name: c.name,
+                    description: c.description,
+                    imageFile: c.imageFile,
+                  })
+                }}
+              />
             </>
           )}
 
