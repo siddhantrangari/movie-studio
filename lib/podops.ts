@@ -88,6 +88,30 @@ async function api(pathname: string, init?: RequestInit) {
   }
 }
 
+const BROWSER_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
+/**
+ * True once ComfyUI answers on the pod's proxy URL.
+ *
+ * This is the signal that actually matters — it means the image finished
+ * pulling, the container started, and the app is serving. RunPod exposes no
+ * public API for image-pull progress, so this is the closest thing to it.
+ */
+export async function comfyReady(podId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://${podId}-8188.proxy.runpod.net/system_stats`, {
+      headers: { 'User-Agent': BROWSER_UA, Accept: '*/*' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function findPod(): Promise<Record<string, unknown> | null> {
   const { data } = await api('/pods')
   if (!Array.isArray(data)) return null
@@ -159,6 +183,7 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
   yield { level: 'info', text: 'Server SSH key ready' }
 
   let podId = ''
+  let rate = 0.22
   for (const gpu of GPUS) {
     yield { level: 'info', text: `Requesting ${gpu}…` }
     const { data } = await api('/pods', {
@@ -175,7 +200,8 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
     })
     if (data?.id) {
       podId = data.id
-      yield { level: 'ok', text: `Got ${gpu} — ${podId} at $${data.costPerHr}/hr` }
+      rate = Number(data.costPerHr) || 0.22
+      yield { level: 'ok', text: `Got ${gpu} — ${podId} at $${rate}/hr (billing starts now, including the image pull)` }
       break
     }
     yield { level: 'warn', text: `unavailable: ${String(data?.error ?? '').slice(0, 90)}` }
@@ -208,8 +234,21 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
       return
     }
     if (i % 6 === 0) {
-      const mins = Math.round(((i + 1) * 10) / 60)
-      yield { level: 'info', text: `still pulling the image… (${mins || 1} min — this is normal on a cold host)` }
+      const mins = Math.max(1, Math.round(((i + 1) * 10) / 60))
+      // ComfyUI answering means the image pull finished and the container is
+      // serving, even if the SSH port hasn't been mapped yet.
+      const serving = await comfyReady(podId)
+      // Billing starts at "Rented by User", so the pull is charged time. Say so,
+      // because waiting out a slow host is a spending decision.
+      const spent = ((mins / 60) * rate).toFixed(3)
+      yield serving
+        ? { level: 'ok', text: `ComfyUI is serving after ${mins} min ($${spent} so far) — waiting on the SSH port` }
+        : {
+            level: mins >= 5 ? 'warn' : 'info',
+            text: mins >= 5
+              ? `still pulling after ${mins} min ($${spent} charged). This host is cold — shutting down and starting again usually lands on one that already has the image.`
+              : `pulling the container image… ${mins} min ($${spent}). Usually under 2 min on a warm host.`,
+          }
     }
   }
 
