@@ -80,16 +80,17 @@ fetch() {   # fetch <repo-path> <dest-dir>
     fi
     mkdir -p "$dest"
     log "Downloading $name"
-    hf download "$REPO" "$src" --local-dir /tmp/hfdl >/dev/null
-    mv "/tmp/hfdl/$src" "$dest/$name"
-    ok "$name"
+    curl -C - -sL --fail --retry 5 --retry-delay 3 \
+        -H "Authorization: Bearer ${HF_TOKEN}" \
+        "https://huggingface.co/${REPO}/resolve/main/${src}" \
+        -o "$dest/$name"
+    ok "$name downloaded"
 }
 
 fetch diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors "$MODELS/diffusion_models"
 fetch text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors        "$MODELS/text_encoders"
 fetch vae/ltx-2.5-video-vae-conv-bf16.safetensors                                       "$MODELS/vae"
 fetch vae/ltx-2.5-audio-vae-bf16.safetensors                                            "$MODELS/vae"
-rm -rf /tmp/hfdl
 
 # ── 3. Expose the AV loaders' inputs in checkpoints/ ──────────────────────────
 log "Linking into checkpoints/"
