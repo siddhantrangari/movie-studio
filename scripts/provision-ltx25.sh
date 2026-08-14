@@ -111,6 +111,11 @@ ok "checkpoints/ linked"
 # to be started. RunPod puts the pod id and a scoped API key in the pod env.
 log "Restarting the container so ComfyUI starts with a clean GPU context"
 
+if [ -n "${BOOT_PROVISION:-}" ]; then
+    ok "Running at container boot (BOOT_PROVISION set) — skipping reset since we are already booting."
+    exit 0
+fi
+
 POD_ID="${RUNPOD_POD_ID:-}"
 RP_KEY="${RUNPOD_API_KEY:-}"
 

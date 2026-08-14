@@ -127,6 +127,15 @@ cmd_volume() {
     fi
 }
 
+is_comfy_ready() {
+    local status
+    status=$(curl -s -L -o /dev/null -w "%{http_code}" \
+        -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+        --max-time 8 \
+        "https://${1}-8188.proxy.runpod.net/system_stats" 2>/dev/null || echo "000")
+    [ "$status" = "200" ]
+}
+
 cmd_up() {
     local existing
     existing=$(find_pod || true)
@@ -136,11 +145,10 @@ cmd_up() {
         return
     fi
 
-    local vol vol_json=""
+    local vol
     vol=$(find_volume || true)
     if [ -n "$vol" ]; then
         ok "Using network volume $vol — models should already be there"
-        vol_json=",\"networkVolumeId\":\"$vol\""
     else
         warn "No network volume — models will download (~4 min). './pod.sh volume' avoids this."
     fi
@@ -148,17 +156,39 @@ cmd_up() {
     local pod_id=""
     for gpu in "${GPUS[@]}"; do
         log "Trying $gpu"
+        local payload
+        payload=$(python3 -c '
+import json, os
+hf_token = os.environ.get("HF_TOKEN", "")
+script_path = os.path.join("'"$SCRIPT_DIR"'", "provision-ltx25.sh")
+with open(script_path, "r") as f:
+    script = f.read()
+
+payload = {
+    "name": "'"$POD_NAME"'",
+    "templateId": "'"$TEMPLATE_ID"'",
+    "gpuTypeIds": ["'"$gpu"'"],
+    "gpuCount": 1,
+    "containerDiskInGb": 100,
+    "cloudType": "COMMUNITY",
+    "env": {
+        "HF_TOKEN": hf_token,
+        "PROVISION_SCRIPT": script
+    },
+    "dockerStartCmd": [
+        "bash",
+        "-c",
+        "printenv PROVISION_SCRIPT > /tmp/provision.sh && (BOOT_PROVISION=1 bash /tmp/provision.sh || echo \"Provisioning failed\") && exec /start.sh"
+    ]
+}
+vol = "'"$vol"'"
+if vol:
+    payload["networkVolumeId"] = vol
+
+print(json.dumps(payload))
+')
         local resp
-        resp=$(api -X POST "$REST/pods" -d "{
-            \"name\":\"$POD_NAME\",
-            \"templateId\":\"$TEMPLATE_ID\",
-            \"gpuTypeIds\":[\"$gpu\"],
-            \"gpuCount\":1,
-            \"containerDiskInGb\":100,
-            \"cloudType\":\"COMMUNITY\",
-            \"env\":{\"HF_TOKEN\":\"${HF_TOKEN:-}\"}
-            $vol_json
-        }")
+        resp=$(api -X POST "$REST/pods" -d "$payload")
         pod_id=$(printf '%s' "$resp" | jqp "print(d.get('id',''))")
         if [ -n "$pod_id" ]; then
             ok "Got $gpu — $pod_id"
@@ -170,29 +200,40 @@ cmd_up() {
     [ -n "$pod_id" ] || { warn "No GPUs available anywhere. Try again shortly."; exit 1; }
     echo "$pod_id" > "$STATE_FILE"
 
-    log "Waiting for it to boot"
-    local ip="" port=""
-    for _ in $(seq 1 60); do
+    log "Waiting for pod to boot and run provisioning script"
+    echo "  (Image pull + model download takes ~3–5 min on warm host, up to 20 min on cold host)"
+    local provisioned=0
+    for i in $(seq 1 180); do
         sleep 10
-        read -r ip port <<<"$(api "$REST/pods/$pod_id" | jqp "
-pm=d.get('portMappings') or {}
-print(d.get('publicIp',''), pm.get('22','')) if d.get('desiredStatus')=='RUNNING' and pm.get('22') else print('','')")"
-        [ -n "${port:-}" ] && break
-    done
-    [ -n "${port:-}" ] || { warn "Still booting. Check './pod.sh status'."; exit 1; }
-    ok "Up at $ip:$port"
+        local status_resp
+        status_resp=$(api "$REST/pods/$pod_id")
+        local desired_status
+        desired_status=$(printf '%s' "$status_resp" | jqp "print(d.get('desiredStatus',''))")
 
-    log "Provisioning"
-    echo "  Copying the setup script and running it. Skips anything already in place,"
-    echo "  so on a warm network volume this is quick."
-    if scp -q -o StrictHostKeyChecking=no -P "$port" \
-           "$SCRIPT_DIR/provision-ltx25.sh" "root@$ip:/tmp/provision.sh" 2>/dev/null; then
-        ssh -o StrictHostKeyChecking=no -p "$port" "root@$ip" 'bash /tmp/provision.sh' || true
+        if [ -n "$desired_status" ] && [ "$desired_status" != "RUNNING" ] && [ "$desired_status" != "PENDING" ]; then
+            warn "Pod entered state: $desired_status — stopping."
+            exit 1
+        fi
+
+        if is_comfy_ready "$pod_id"; then
+            provisioned=1
+            break
+        fi
+
+        local mins=$(( i * 10 / 60 ))
+        if [ $(( i % 6 )) -eq 0 ]; then
+            if [ "$desired_status" = "RUNNING" ]; then
+                echo "  Container active. Provisioning models & starting ComfyUI… ${mins}m elapsed."
+            else
+                echo "  Creating container… ${mins}m elapsed."
+            fi
+        fi
+    done
+
+    if [ "$provisioned" -eq 1 ]; then
+        ok "ComfyUI is live! Provisioning complete."
     else
-        warn "Could not SSH from here (your key isn't on the pod)."
-        echo "  Run this in the pod's Jupyter terminal instead:"
-        echo
-        echo "    curl -sL https://raw.githubusercontent.com/siddhantrangari/movie-studio/main/scripts/provision-ltx25.sh | bash"
+        warn "Timed out waiting for ComfyUI. Check the RunPod console logs to see if downloads are still in progress."
     fi
 
     printf '\n\033[0;32m════════════════════════════════════════\033[0m\n'

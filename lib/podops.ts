@@ -177,6 +177,26 @@ const sshArgs = (port: number, ip: string, extra: string[]) => [
   ...extra,
 ]
 
+export async function findVolumeId(): Promise<string | null> {
+  try {
+    const res = await fetch('https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ query: '{ myself { networkVolumes { id name } } }' }),
+      cache: 'no-store',
+    })
+    const j = await res.json()
+    const volumes = j?.data?.myself?.networkVolumes
+    if (Array.isArray(volumes)) {
+      const v = volumes.find((vol: { name?: string; id?: string }) => vol.name === 'ltx25-models')
+      return v?.id ?? null
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
 /**
  * Deploys a pod and provisions it, yielding progress as it goes.
  * Safe to call when a pod already exists — it reports and stops.
@@ -184,14 +204,18 @@ const sshArgs = (port: number, ip: string, extra: string[]) => [
 export async function* bringUp(): AsyncGenerator<LogLine> {
   const existing = await findPod()
   if (existing) {
-    // Provisioning may have been interrupted — pick up where it left off rather
-    // than leaving a billing pod that can't generate anything.
     yield { level: 'ok', text: `Pod already running: ${existing.id}` }
+    const ready = await comfyReady(String(existing.id))
+    if (ready) {
+      yield { level: 'ok', text: 'ComfyUI is already running and ready.' }
+      yield { level: 'done', text: String(existing.id) }
+      return
+    }
     const mapped = (existing.portMappings as Record<string, number> | undefined)?.['22']
     if (mapped) {
       yield* provisionExisting(String(existing.publicIp), Number(mapped))
     } else {
-      yield { level: 'warn', text: 'No SSH port — cannot check provisioning.' }
+      yield { level: 'warn', text: 'No SSH port. If provisioning got interrupted, please restart/reset the pod in your RunPod console.' }
     }
     yield { level: 'done', text: String(existing.id) }
     return
@@ -200,26 +224,53 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
   const pubkey = ensureKeypair()
   yield { level: 'info', text: 'Server SSH key ready' }
 
+  let provisionScript = ''
+  try {
+    provisionScript = fs.readFileSync(path.join(process.cwd(), 'scripts', 'provision-ltx25.sh'), 'utf8')
+  } catch (e) {
+    yield { level: 'error', text: `Could not read provisioning script: ${(e as Error).message}` }
+    return
+  }
+
+  const networkVolumeId = await findVolumeId()
+  if (networkVolumeId) {
+    yield { level: 'ok', text: `Using network volume ${networkVolumeId}` }
+  }
+
   let podId = ''
   let rate = 0.22
   for (const gpu of GPUS) {
     yield { level: 'info', text: `Requesting ${gpu}…` }
+    const body: Record<string, unknown> = {
+      name: POD_NAME,
+      templateId: TEMPLATE_ID,
+      gpuTypeIds: [gpu],
+      gpuCount: 1,
+      containerDiskInGb: 100,
+      cloudType: 'COMMUNITY',
+      env: {
+        HF_TOKEN: process.env.HF_TOKEN ?? '',
+        PUBLIC_KEY: pubkey,
+        PROVISION_SCRIPT: provisionScript,
+      },
+      dockerStartCmd: [
+        'bash',
+        '-c',
+        'printenv PROVISION_SCRIPT > /tmp/provision.sh && (BOOT_PROVISION=1 bash /tmp/provision.sh || echo "Provisioning failed") && exec /start.sh',
+      ],
+    }
+    if (networkVolumeId) {
+      body.networkVolumeId = networkVolumeId
+    }
+
     const { data } = await api('/pods', {
       method: 'POST',
-      body: JSON.stringify({
-        name: POD_NAME,
-        templateId: TEMPLATE_ID,
-        gpuTypeIds: [gpu],
-        gpuCount: 1,
-        containerDiskInGb: 100,
-        cloudType: 'COMMUNITY',
-        env: { HF_TOKEN: process.env.HF_TOKEN ?? '', PUBLIC_KEY: pubkey },
-      }),
+      body: JSON.stringify(body),
     })
     if (data?.id) {
       podId = data.id
       rate = Number(data.costPerHr) || 0.22
-      yield { level: 'ok', text: `Got ${gpu} — ${podId} at $${rate}/hr (billing starts now, including the image pull)` }
+      yield { level: 'ok', text: `Got ${gpu} — ${podId} at $${rate}/hr (billing starts now)` }
       break
     }
     yield { level: 'warn', text: `unavailable: ${String(data?.error ?? '').slice(0, 90)}` }
@@ -230,54 +281,41 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
     return
   }
 
-  // A cold host pulls the ~5GB container image before the container starts, and
-  // RunPod only assigns the public IP and SSH port once it does. On a slow pull
-  // that can take 20 minutes, so this waits far longer than feels necessary —
-  // giving up early terminates a pod that is still making progress.
-  yield { level: 'info', text: 'Waiting for it to boot (image pull can take 15–20 min on a cold host)…' }
-  let ip = ''
-  let port = 0
-  const BOOT_TRIES = 150 // 25 minutes at 10s
-  for (let i = 0; i < BOOT_TRIES; i++) {
+  yield { level: 'info', text: 'Waiting for pod to boot and run provisioning script (takes ~3–5 min on warm host)…' }
+  const MAX_TRIES = 180 // 30 minutes at 10s
+  let provisioned = false
+  for (let i = 0; i < MAX_TRIES; i++) {
     await new Promise((r) => setTimeout(r, 10_000))
     const { data } = await api(`/pods/${podId}`)
-    const mapped = (data?.portMappings ?? {})['22']
-    if (data?.desiredStatus === 'RUNNING' && mapped) {
-      ip = data.publicIp
-      port = Number(mapped)
-      break
-    }
     if (data?.desiredStatus && !['RUNNING', 'PENDING'].includes(String(data.desiredStatus))) {
       yield { level: 'error', text: `Pod entered ${data.desiredStatus} — stopping.` }
       return
     }
-    if (i % 6 === 0) {
+
+    const ready = await comfyReady(podId)
+    if (ready) {
+      provisioned = true
+      break
+    }
+
+    if (i > 0 && i % 6 === 0) {
       const mins = Math.max(1, Math.round(((i + 1) * 10) / 60))
-      // ComfyUI answering means the image pull finished and the container is
-      // serving, even if the SSH port hasn't been mapped yet.
-      const serving = await comfyReady(podId)
-      // Billing starts at "Rented by User", so the pull is charged time. Say so,
-      // because waiting out a slow host is a spending decision.
       const spent = ((mins / 60) * rate).toFixed(3)
-      yield serving
-        ? { level: 'ok', text: `ComfyUI is serving after ${mins} min ($${spent} so far) — waiting on the SSH port` }
-        : {
-            level: mins >= 5 ? 'warn' : 'info',
-            text: mins >= 5
-              ? `still pulling after ${mins} min ($${spent} charged). This host is cold — shutting down and starting again usually lands on one that already has the image.`
-              : `pulling the container image… ${mins} min ($${spent}). Usually under 2 min on a warm host.`,
-          }
+      yield {
+        level: 'info',
+        text: data?.desiredStatus === 'RUNNING'
+          ? `Container active. Provisioning models & starting ComfyUI… ${mins} min ($${spent} spent)`
+          : `Pulling container image… ${mins} min ($${spent} spent)`,
+      }
     }
   }
 
-  if (!port) {
-    yield { level: 'warn', text: 'No SSH port after 25 minutes. The pod is left running — check the RunPod console; it may still be pulling.' }
-    yield { level: 'warn', text: `If it comes up, press Start again to provision it: https://${podId}-8888.proxy.runpod.net` }
+  if (!provisioned) {
+    yield { level: 'warn', text: 'Timed out waiting for ComfyUI. Check the RunPod console logs to see if downloads are still in progress.' }
     return
   }
-  yield { level: 'ok', text: `Booted at ${ip}:${port}` }
 
-  yield* provisionExisting(ip, port)
+  yield { level: 'ok', text: 'ComfyUI is live! Provisioning complete.' }
   yield { level: 'done', text: podId }
 }
 

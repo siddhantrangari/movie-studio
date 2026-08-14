@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { listPods, runpodHeaders, POD_NAMES } from '@/lib/runpod'
@@ -92,6 +94,16 @@ export async function POST(req: NextRequest) {
     if (isLtx) {
       // Official RunPod ComfyUI template — pre-installs ComfyUI, hf CLI, all nodes
       payload.templateId = 'cw3nka7d08'
+      try {
+        env.PROVISION_SCRIPT = fs.readFileSync(path.join(process.cwd(), 'scripts', 'provision-ltx25.sh'), 'utf8')
+        payload.dockerStartCmd = [
+          'bash',
+          '-c',
+          'printenv PROVISION_SCRIPT > /tmp/provision.sh && (BOOT_PROVISION=1 bash /tmp/provision.sh || echo "Provisioning failed") && exec /start.sh',
+        ]
+      } catch {
+        // Fallback if script file cannot be read
+      }
     } else {
       payload.imageName = 'hearmeman/comfyui-minimax-template:v2-cuda12'
       payload.ports = ['8188/http', '8888/http', '22/tcp']
