@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
-import { bringUp, tearDown, findPod, type LogLine } from '@/lib/podops'
+import { startJob, currentJob, findPod, type LogLine } from '@/lib/podops'
 
 // Bringing a pod up includes a ~4 minute download.
 export const maxDuration = 900
@@ -11,16 +11,31 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const pod = await findPod()
+  const job = currentJob()
+
+  // The API's costPerHr is the GPU rate only; RunPod's console shows GPU plus
+  // storage, which is why the two disagreed. Storage runs ~$0.10/GB/month on a
+  // running pod. GPU rates also move with demand, so this is re-read every poll
+  // rather than cached from creation time.
+  const gpu = Number(pod?.costPerHr ?? 0)
+  const diskGb = Number(pod?.containerDiskInGb ?? 0) + Number(pod?.volumeInGb ?? 0)
+  const storage = (diskGb * 0.1) / 730
+
   return NextResponse.json({
     pod: pod
       ? {
           id: pod.id,
           status: pod.desiredStatus,
-          costPerHr: pod.costPerHr,
+          costPerHr: gpu,
+          storagePerHr: Number(storage.toFixed(4)),
+          totalPerHr: Number((gpu + storage).toFixed(3)),
+          diskGb,
           comfyui: `https://${pod.id}-8188.proxy.runpod.net`,
           jupyter: `https://${pod.id}-8888.proxy.runpod.net`,
         }
       : null,
+    // Lets a reloaded page re-attach to a run already in flight.
+    job: job ? { running: job.running, action: job.action, lines: job.lines } : null,
   })
 }
 
@@ -38,20 +53,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
 
-  const source: AsyncGenerator<LogLine> = action === 'up' ? bringUp() : tearDown()
+  // The run itself is detached, so navigating away no longer strands a
+  // half-provisioned pod that is still billing. This response just tails it.
+  const job = startJob(action)
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (line: LogLine) =>
-        controller.enqueue(encoder.encode(JSON.stringify(line) + '\n'))
-      try {
-        for await (const line of source) send(line)
-      } catch (e) {
-        send({ level: 'error', text: (e as Error).message })
-      } finally {
-        controller.close()
+      const send = (line: LogLine) => {
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(line) + '\n'))
+        } catch {
+          // client hung up; the job keeps going regardless
+        }
       }
+      let sent = 0
+      for (;;) {
+        while (sent < job.lines.length) send(job.lines[sent++])
+        if (!job.running && sent >= job.lines.length) break
+        await new Promise((r) => setTimeout(r, 400))
+      }
+      send({ level: 'done', text: '' })
+      try { controller.close() } catch { /* already closed */ }
     },
   })
 

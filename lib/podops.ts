@@ -28,6 +28,37 @@ const GPUS = [
 
 export type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
 
+/**
+ * A lifecycle run, kept in module scope so it outlives the request that started
+ * it. Closing the tab mid-provision used to abort a half-finished pod that was
+ * still billing; now the work continues and any client can re-attach to the log.
+ */
+type Job = { id: string; action: string; lines: LogLine[]; running: boolean; startedAt: number }
+let current: Job | null = null
+
+export function currentJob(): Job | null {
+  return current
+}
+
+/** Starts a run detached from the caller. Returns immediately. */
+export function startJob(action: 'up' | 'down'): Job {
+  if (current?.running) return current
+  const job: Job = { id: Math.random().toString(36).slice(2, 10), action, lines: [], running: true, startedAt: Date.now() }
+  current = job
+  ;(async () => {
+    try {
+      for await (const line of action === 'up' ? bringUp() : tearDown()) {
+        job.lines.push(line)
+      }
+    } catch (e) {
+      job.lines.push({ level: 'error', text: (e as Error).message })
+    } finally {
+      job.running = false
+    }
+  })()
+  return job
+}
+
 function headers() {
   return {
     Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`,
@@ -111,7 +142,15 @@ const sshArgs = (port: number, ip: string, extra: string[]) => [
 export async function* bringUp(): AsyncGenerator<LogLine> {
   const existing = await findPod()
   if (existing) {
+    // Provisioning may have been interrupted — pick up where it left off rather
+    // than leaving a billing pod that can't generate anything.
     yield { level: 'ok', text: `Pod already running: ${existing.id}` }
+    const mapped = (existing.portMappings as Record<string, number> | undefined)?.['22']
+    if (mapped) {
+      yield* provisionExisting(String(existing.publicIp), Number(mapped))
+    } else {
+      yield { level: 'warn', text: 'No SSH port — cannot check provisioning.' }
+    }
     yield { level: 'done', text: String(existing.id) }
     return
   }
@@ -168,6 +207,17 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
   }
   yield { level: 'ok', text: `Booted at ${ip}:${port}` }
 
+  yield* provisionExisting(ip, port)
+  yield { level: 'done', text: podId }
+}
+
+/**
+ * Runs the provisioning script against a pod that is already up.
+ *
+ * Split out from bringUp so an interrupted run can be resumed — the script is
+ * idempotent, so re-running only does what's still missing.
+ */
+export async function* provisionExisting(ip: string, port: number): AsyncGenerator<LogLine> {
   // The pod writes the key in at startup, so sshd may not accept it instantly.
   yield { level: 'info', text: 'Waiting for SSH…' }
   let reachable = false
@@ -178,8 +228,6 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
   }
   if (!reachable) {
     yield { level: 'warn', text: 'SSH never came up — the pod is running but not provisioned.' }
-    yield { level: 'warn', text: `Provision manually in Jupyter, then use it: https://${podId}-8888.proxy.runpod.net` }
-    yield { level: 'done', text: podId }
     return
   }
 
@@ -222,8 +270,6 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
   yield exitCode === 0 || sawReset
     ? { level: 'ok', text: 'Provisioned. ComfyUI is restarting — give it a minute.' }
     : { level: 'warn', text: `Provisioning exited ${exitCode} — check the log above.` }
-
-  yield { level: 'done', text: podId }
 }
 
 /** Feeds the provisioning script over stdin so nothing has to be copied first. */

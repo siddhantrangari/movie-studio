@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
-type Pod = { id: string; status: string; costPerHr: number; comfyui: string; jupyter: string } | null
+type Pod = {
+  id: string; status: string
+  costPerHr: number; storagePerHr: number; totalPerHr: number; diskGb: number
+  comfyui: string; jupyter: string
+} | null
 
 const GOLD = '#E8B94A'
 const CARD = '#121F35'
@@ -95,7 +99,10 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
 
       {pod && running && (
         <div style={{ fontSize: '11px', color: GREY, marginBottom: '0.75rem', lineHeight: 1.7 }}>
-          <div>${pod.costPerHr}/hr · billing now</div>
+          <div title={`GPU $${pod.costPerHr}/hr + ${pod.diskGb}GB storage $${pod.storagePerHr}/hr`}>
+            <strong style={{ color: '#F2F5FA' }}>${pod.totalPerHr}/hr</strong> billing now
+            <span style={{ color: '#64748b' }}> · GPU ${pod.costPerHr} + disk ${pod.storagePerHr}</span>
+          </div>
           <a href={pod.comfyui} target="_blank" rel="noopener" style={{ color: GOLD, fontWeight: 600 }}>Open ComfyUI ↗</a>
           {' · '}
           <a href={pod.jupyter} target="_blank" rel="noopener" style={{ color: GREY }}>Jupyter ↗</a>
