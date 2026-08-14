@@ -20,6 +20,7 @@ const LEVEL_COLOR: Record<string, string> = {
 
 export default function PodPanel({ onPodChange }: { onPodChange?: (running: boolean) => void }) {
   const [pod, setPod] = useState<Pod>(null)
+  const [account, setAccount] = useState<{ balance: number; spendPerHr: number } | null>(null)
   const [logs, setLogs] = useState<LogLine[]>([])
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
@@ -31,6 +32,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
     if (!r.ok) return
     const d = await r.json()
     setPod(d.pod)
+    setAccount(d.account ?? null)
     onPodChange?.(d.pod?.status === 'RUNNING')
   }, [onPodChange])
 
@@ -112,6 +114,11 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
         <span style={{ fontSize: '11px', lineHeight: 1 }}>●</span>
         {label}
         {running && pod && <span style={{ opacity: 0.75, fontWeight: 600 }}>${pod.totalPerHr}/hr</span>}
+        {account && (
+          <span style={{ color: account.balance < 2 ? '#f87171' : GREY, fontWeight: 600 }}>
+            ${account.balance.toFixed(2)}
+          </span>
+        )}
         <span style={{ opacity: 0.6, fontSize: '8px' }}>{open ? '▲' : '▼'}</span>
       </button>
 
@@ -137,6 +144,24 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
               {busy ? 'Working — you can close this, it keeps running.'
                     : 'Nothing is billing. Starting takes about 5 minutes, mostly downloading models.'}
             </p>
+          )}
+
+          {account && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', fontSize: '11px',
+              padding: '0.5rem 0.6rem', marginBottom: '0.75rem', borderRadius: '0.4rem',
+              background: '#070c14', border: `1px solid ${LINE}`,
+            }}>
+              <span style={{ color: GREY }}>RunPod balance</span>
+              <span style={{ color: account.balance < 2 ? '#f87171' : '#F2F5FA', fontWeight: 700 }}>
+                ${account.balance.toFixed(2)}
+                {account.spendPerHr > 0 && (
+                  <span style={{ color: GREY, fontWeight: 500 }}>
+                    {' '}· {(account.balance / account.spendPerHr).toFixed(0)}h left
+                  </span>
+                )}
+              </span>
+            </div>
           )}
 
           <button onClick={() => run(running ? 'down' : 'up')} disabled={busy}

@@ -112,6 +112,24 @@ export async function comfyReady(podId: string): Promise<boolean> {
   }
 }
 
+/** Account balance and current burn, for the UI to surface. */
+export async function accountBalance(): Promise<{ balance: number; spendPerHr: number } | null> {
+  try {
+    const res = await fetch('https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ query: '{ myself { clientBalance currentSpendPerHr } }' }),
+      cache: 'no-store',
+    })
+    const j = await res.json()
+    const m = j?.data?.myself
+    if (!m) return null
+    return { balance: Number(m.clientBalance ?? 0), spendPerHr: Number(m.currentSpendPerHr ?? 0) }
+  } catch {
+    return null
+  }
+}
+
 export async function findPod(): Promise<Record<string, unknown> | null> {
   const { data } = await api('/pods')
   if (!Array.isArray(data)) return null

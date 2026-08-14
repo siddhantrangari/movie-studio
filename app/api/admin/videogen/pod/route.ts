@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
-import { startJob, currentJob, findPod, type LogLine } from '@/lib/podops'
+import { startJob, currentJob, findPod, accountBalance, type LogLine } from '@/lib/podops'
 
 // Bringing a pod up includes a ~4 minute download.
 export const maxDuration = 900
@@ -10,7 +10,7 @@ export async function GET() {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const pod = await findPod()
+  const [pod, account] = await Promise.all([findPod(), accountBalance()])
   const job = currentJob()
 
   // The API's costPerHr is the GPU rate only; RunPod's console shows GPU plus
@@ -34,6 +34,7 @@ export async function GET() {
           jupyter: `https://${pod.id}-8888.proxy.runpod.net`,
         }
       : null,
+    account,
     // Lets a reloaded page re-attach to a run already in flight.
     job: job ? { running: job.running, action: job.action, lines: job.lines } : null,
   })
