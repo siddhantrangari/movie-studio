@@ -186,10 +186,15 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
     return
   }
 
-  yield { level: 'info', text: 'Waiting for it to boot…' }
+  // A cold host pulls the ~5GB container image before the container starts, and
+  // RunPod only assigns the public IP and SSH port once it does. On a slow pull
+  // that can take 20 minutes, so this waits far longer than feels necessary —
+  // giving up early terminates a pod that is still making progress.
+  yield { level: 'info', text: 'Waiting for it to boot (image pull can take 15–20 min on a cold host)…' }
   let ip = ''
   let port = 0
-  for (let i = 0; i < 60; i++) {
+  const BOOT_TRIES = 150 // 25 minutes at 10s
+  for (let i = 0; i < BOOT_TRIES; i++) {
     await new Promise((r) => setTimeout(r, 10_000))
     const { data } = await api(`/pods/${podId}`)
     const mapped = (data?.portMappings ?? {})['22']
@@ -198,11 +203,19 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
       port = Number(mapped)
       break
     }
-    if (i % 3 === 0) yield { level: 'info', text: `still booting… (${(i + 1) * 10}s)` }
+    if (data?.desiredStatus && !['RUNNING', 'PENDING'].includes(String(data.desiredStatus))) {
+      yield { level: 'error', text: `Pod entered ${data.desiredStatus} — stopping.` }
+      return
+    }
+    if (i % 6 === 0) {
+      const mins = Math.round(((i + 1) * 10) / 60)
+      yield { level: 'info', text: `still pulling the image… (${mins || 1} min — this is normal on a cold host)` }
+    }
   }
 
   if (!port) {
-    yield { level: 'error', text: 'Pod did not finish booting. Check the RunPod console.' }
+    yield { level: 'warn', text: 'No SSH port after 25 minutes. The pod is left running — check the RunPod console; it may still be pulling.' }
+    yield { level: 'warn', text: `If it comes up, press Start again to provision it: https://${podId}-8888.proxy.runpod.net` }
     return
   }
   yield { level: 'ok', text: `Booted at ${ip}:${port}` }
