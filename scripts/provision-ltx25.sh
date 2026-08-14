@@ -103,27 +103,31 @@ for f in "$MODELS"/checkpoints/*.safetensors; do
 done
 ok "checkpoints/ linked"
 
-# ── 4. Restart ComfyUI ────────────────────────────────────────────────────────
-log "Restarting ComfyUI"
-pkill -f "main.py.*--port 8188" 2>/dev/null || true
-sleep 5
-cd "$COMFY"
-setsid nohup python3 main.py --listen 0.0.0.0 --port 8188 --enable-cors-header \
-    > /workspace/comfyui.log 2>&1 < /dev/null &
+# ── 4. Restart the container ──────────────────────────────────────────────────
+# Deliberately NOT `pkill && nohup python3 main.py`. A process started from an
+# SSH session doesn't inherit the container's GPU context, and torch then dies
+# with "CUDA unknown error" even though nvidia-smi works fine. Resetting the
+# container lets the image's own entrypoint start ComfyUI the way it was meant
+# to be started. RunPod puts the pod id and a scoped API key in the pod env.
+log "Restarting the container so ComfyUI starts with a clean GPU context"
 
-for _ in $(seq 1 60); do
-    sleep 5
-    if curl -sf --max-time 5 http://127.0.0.1:8188/system_stats >/dev/null 2>&1; then
-        VER=$(curl -s --max-time 5 http://127.0.0.1:8188/system_stats \
-              | python3 -c "import json,sys; print(json.load(sys.stdin)['system']['comfyui_version'])" 2>/dev/null)
-        printf '\n\033[0;32m════════════════════════════════════════\033[0m\n'
-        ok "ComfyUI $VER is up — LTX 2.5 ready"
-        printf '\033[0;32m════════════════════════════════════════\033[0m\n\n'
-        df -h "$MODELS" | tail -1
-        exit 0
-    fi
-done
+POD_ID="${RUNPOD_POD_ID:-}"
+RP_KEY="${RUNPOD_API_KEY:-}"
 
-echo "ComfyUI did not come up in time. Check /workspace/comfyui.log"
-tail -20 /workspace/comfyui.log
-exit 1
+if [ -z "$POD_ID" ] || [ -z "$RP_KEY" ]; then
+    printf '\n\033[1;33m  Could not self-restart (RUNPOD_POD_ID / RUNPOD_API_KEY missing).\033[0m\n'
+    echo "  Models are in place. Restart the pod from the RunPod console and"
+    echo "  ComfyUI will come up with LTX 2.5 ready."
+    exit 0
+fi
+
+echo "  Models are in place. Resetting pod $POD_ID —"
+echo "  this SSH session will drop, which is expected."
+echo "  ComfyUI is back about a minute later at port 8188."
+
+curl -s --max-time 30 -X POST \
+    "https://rest.runpod.io/v1/pods/${POD_ID}/reset" \
+    -H "Authorization: Bearer ${RP_KEY}" >/dev/null 2>&1 || true
+
+printf '\n\033[0;32m  ✓ Reset requested — provisioning complete\033[0m\n\n'
+exit 0
