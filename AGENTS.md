@@ -19,7 +19,10 @@ Key rules to memorize:
 - The VPS uses a scoped SSH deploy key (`github.com-siddhantrangari` alias) — do NOT change global SSH config
 
 🚨 SSH SAFETY: Hostinger blocks IPs on repeated failed SSH attempts.
-NEVER guess SSH aliases or IPs. ALWAYS verify with `cat ~/.ssh/config | grep -A5 'Host vps'`
-and run `ssh -o ConnectTimeout=5 -o BatchMode=yes vps 'echo ok'` before any deploy command.
-If it fails — STOP. Do not retry blindly.
+NEVER guess SSH aliases or IPs — `vps` is the only correct name.
+
+Connect with plain `ssh vps '<command>'`. Do NOT prepend a connectivity probe
+such as `ssh -o ConnectTimeout=5 -o BatchMode=yes vps 'echo ok'`, and do not add
+`-o` flags — the alias is already configured and keyed, so the probe only adds a
+round trip. If a command fails — STOP. Do not retry blindly.
 <!-- END:deploy-sop-rules -->

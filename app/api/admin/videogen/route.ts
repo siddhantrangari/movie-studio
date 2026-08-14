@@ -3,6 +3,7 @@ import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { listPods, runpodHeaders, POD_NAMES } from '@/lib/runpod'
+import { bootCommand, PORTS } from '@/lib/podops'
 
 const RUNPOD_API = 'https://rest.runpod.io/v1'
 
@@ -96,11 +97,11 @@ export async function POST(req: NextRequest) {
       payload.templateId = 'cw3nka7d08'
       try {
         env.PROVISION_SCRIPT = fs.readFileSync(path.join(process.cwd(), 'scripts', 'provision-ltx25.sh'), 'utf8')
-        payload.dockerStartCmd = [
-          'bash',
-          '-c',
-          'printenv PROVISION_SCRIPT > /tmp/provision.sh && (BOOT_PROVISION=1 bash /tmp/provision.sh || echo "Provisioning failed") && exec /start.sh',
-        ]
+        // The image pins ENTRYPOINT ["/start.sh"], so overriding CMD alone is
+        // not enough — see lib/podops.ts.
+        payload.ports = PORTS
+        payload.dockerEntrypoint = ['/bin/bash', '-c']
+        payload.dockerStartCmd = [bootCommand()]
       } catch {
         // Fallback if script file cannot be read
       }

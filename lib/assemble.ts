@@ -120,7 +120,39 @@ export function deleteFilm(id: string) {
       // file already gone
     }
   }
+  // A film deleted mid-assembly would otherwise strand its scratch dir.
+  fs.rmSync(path.join(WORK_DIR, id), { recursive: true, force: true })
   writeFilms(readFilms().filter((f) => f.id !== id))
+}
+
+/**
+ * Clears scratch directories left behind by assemblies that never finished.
+ *
+ * assemble() removes its own work dir in a finally block, but that can't run if
+ * the process is killed mid-render — a PM2 restart or an OOM during ffmpeg.
+ * Those dirs hold every downloaded scene clip, so on a shared VPS they are the
+ * one thing here that can quietly grow without bound.
+ */
+export function sweepOrphanedWork(): number {
+  if (!fs.existsSync(WORK_DIR)) return 0
+  const building = new Set(readFilms().filter((f) => f.state === 'building').map((f) => f.id))
+  let freed = 0
+  for (const entry of fs.readdirSync(WORK_DIR)) {
+    const dir = path.join(WORK_DIR, entry)
+    try {
+      const stat = fs.statSync(dir)
+      if (!stat.isDirectory()) continue
+      // An in-flight assembly keeps its dir, unless it's old enough that the
+      // 'building' record must be a crash leftover rather than live work.
+      const stale = Date.now() - stat.mtimeMs > 6 * 60 * 60 * 1000
+      if (building.has(entry) && !stale) continue
+      fs.rmSync(dir, { recursive: true, force: true })
+      freed++
+    } catch {
+      // racing with a live assembly; leave it alone
+    }
+  }
+  return freed
 }
 
 export function readFilmFile(file: string): string | null {
@@ -236,6 +268,8 @@ export function startAssembly(sb: Storyboard, podId: string, captions: CaptionSt
 
 async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, film: Film) {
   ensureDirs()
+  // Cheap, and this is the moment disk headroom actually matters.
+  sweepOrphanedWork()
   const work = path.join(WORK_DIR, film.id)
   fs.mkdirSync(work, { recursive: true })
 

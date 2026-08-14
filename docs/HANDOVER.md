@@ -6,11 +6,10 @@ character consistency, storyboarding, and film assembly with captions.
 **Live:** `siddhantrangari.com` → deployed separately at `/var/www/movie-studio`
 on the VPS, PM2 process `movie-studio`, port 3000.
 
-This doc exists because two agent sessions worked on this today and a third
-is picking it up. Read this before touching pod provisioning — the most
-recent change (dockerStartCmd) is **unverified and currently appears broken**.
-Don't repeat the experiment that already cost money twice without reading
-[Current blocker](#current-blocker-unverified) first.
+Read [Provisioning: solved, with a caveat](#provisioning-solved-with-a-caveat)
+before touching pod provisioning. Provisioning itself now works and is proven
+on a real pod; what remains flaky is community host quality. Storage rules for
+the shared VPS are in [docs/storage.md](storage.md).
 
 ---
 
@@ -39,99 +38,102 @@ Don't repeat the experiment that already cost money twice without reading
   3. The transformer and audio VAE must be **symlinked into `checkpoints/`**
      — both LTX AV loaders read their dropdowns from that folder.
 
-## Current blocker (unverified)
+## Provisioning: solved, with a caveat
 
-**Provisioning a fresh pod has never successfully completed today, across
-~6 attempts by two different agent sessions.** Three different causes were
-found and fixed in sequence; the current one is unconfirmed and may not work.
+**The dockerStartCmd blocker is fixed and proven on a real pod.** Provisioning
+now runs at container boot and streams its log into the app UI.
 
-### Attempt 1–3 (this session): SSH-based provisioning
+### What actually fixed it
 
-`lib/podops.ts` used to SSH into the pod after boot and pipe
-`scripts/provision-ltx25.sh` in over stdin. This failed three times for two
-different reasons:
-
-- **Some RunPod hosts never assign a public IP or TCP port at all** — only
-  the HTTP proxy (`*.proxy.runpod.net`) works. Confirmed directly: a pod
-  showed `portMappings: null` and `publicIp: ""` for 8+ minutes while ComfyUI
-  answered fine over the HTTP proxy. No amount of waiting fixes this — SSH is
-  structurally impossible on that class of host.
-- **A boot-timeout bug** (now fixed) killed a pod that was still pulling its
-  5GB container image, mistaking normal cold-start time for failure.
-
-### Attempt 4+ (other agent session, commits `dca2fbc`, `9317f48`):
-switched to `dockerStartCmd`
-
-The idea: pass the provisioning script as the pod's Docker start command at
-creation time, so it runs at container boot with no SSH needed at all. Sound
-idea, `dockerStartCmd` is a real, documented RunPod API field. But:
-
-**I tested it and it did not work**, then confirmed why for certain —
-without spending anything, by reading the image manifest directly from
-Docker Hub's registry API (no pod, no pull, just two `curl`s):
+`dockerEntrypoint`. The previous session correctly proved `dockerStartCmd`
+could not work — `runpod/comfyui:cuda12.8` pins `ENTRYPOINT ["/start.sh"]`, and
+Docker only ever replaces CMD. What it missed is that RunPod's REST API also
+accepts **`dockerEntrypoint`**, which replaces the entrypoint itself:
 
 ```json
-"Entrypoint": ["/start.sh"],
-"Cmd": null
+"dockerEntrypoint": ["/bin/bash", "-c"],
+"dockerStartCmd": ["<boot script>"]
 ```
 
-`runpod/comfyui:cuda12.8` has a **fixed ENTRYPOINT**. Docker always execs
-`ENTRYPOINT [CMD...]` — the entrypoint is never replaced, only its
-arguments are. RunPod's `dockerStartCmd` overrides Cmd, not Entrypoint. So
-what actually ran on the pod was:
+Confirmed on pod `kjiafppb7kdbtg`: our script's first log line appeared 25s
+after boot. This was a few lines of change, not the Jupyter WebSocket client
+the previous handover recommended.
 
-```
-/start.sh bash -c "printenv PROVISION_SCRIPT > /tmp/provision.sh && ..."
-```
+### Provisioning runs in two phases, and the order is forced
 
-— i.e. `/start.sh` invoked with three positional arguments (`$1=bash`,
-`$2=-c`, `$3="printenv..."`) that a normal bootstrap script has no reason to
-read. It ignored them and ran its own default startup, which is exactly what
-was observed: stock ComfyUI 0.30.0, empty `checkpoints/`, no error, no sign
-our script ever ran. **This is not a timing issue or bad luck — the approach
-cannot work against this image, confirmed.**
+`/workspace/runpod-slim/ComfyUI` **does not exist** until `/start.sh` copies it
+there from `/opt/comfyui-baked`. The first attempt at this failed with
+`ERROR: ComfyUI not found` for exactly that reason.
 
-The dockerStartCmd code is still live in `lib/podops.ts` (`bringUp()`) and
-in `app/api/admin/videogen/route.ts` (the older, separate deploy path used
-by `VideoGenClient.tsx`) — **both carry this same broken assumption and
-need to be reverted or replaced, not retried.**
+- **`PROVISION_PHASE=code`** — before `/start.sh`, against `/opt/comfyui-baked`.
+  Git upgrade to v0.33.1 measured at **2.3 seconds** (91MB repo, shallow fetch).
+  `/start.sh` then copies the already-upgraded tree, so ComfyUI launches on the
+  right version and **never needs restarting** — which sidesteps the "CUDA
+  unknown error on restart" trap entirely.
+- **`PROVISION_PHASE=models`** — alongside `/start.sh`, in the background.
+  Waits for ComfyUI to answer on `127.0.0.1:8188` (proof the `cp -r` finished,
+  not just that `main.py` appeared) then downloads into the workspace copy.
+
+Do **not** collapse these back into one pass in either direction.
+
+### The log channel
+
+A `python3 -m http.server` on port **7777** (declared in `ports` at creation)
+serves `/var/log/provision/provision.log`. The app polls it over the RunPod
+HTTPS proxy — no SSH, no WebSocket, no Docker internals. Output is `tee`'d so
+it appears in **RunPod's own Container log tab as well**; an earlier version
+redirected only to the file and left that tab blank.
+
+### Useful: Jupyter is wide open
+
+`https://<podId>-8888.proxy.runpod.net` needs **no token** — `/api/status`
+answers 200. `POST /api/terminals` plus a WebSocket to
+`/terminals/websocket/<name>` gives a **full root shell** on any pod, including
+hosts with no SSH port. This is how the image internals above were discovered
+without spending anything extra. Keep it in mind for debugging; it also remains
+the fallback provisioning channel if the entrypoint override ever regresses.
+
+## Current blocker: community host quality
+
+Provisioning works. What is unreliable is **the hosts themselves**. On pod
+`aj6h0uy98hcp0o`:
+
+- **The GPU was unusable.** `nvidia-smi` saw the RTX 3090, `/dev/nvidia-uvm`
+  existed, torch was the correct `2.10.0+cu128` and had not been modified — yet
+  `torch.cuda.is_available()` returned `False` and ComfyUI crashed with
+  `RuntimeError: CUDA unknown error`. Host-level fault, not ours.
+- **The network was unusably slow.** Measured on the pod: **0.43 MB/s** on one
+  connection (25MB in 58s); ~1.8 MB/s across 8 parallel connections. The 20.5GB
+  transformer alone would have taken hours.
+
+Note this is very likely what earlier sessions misdiagnosed as "restarting
+ComfyUI from SSH breaks CUDA" — the same error appears on a bad host with no
+restart involved.
+
+### Mitigations now in place
+
+- `check_gpu()` runs **before any download** and prints `GPU_BROKEN`.
+  `lib/podops.ts` watches for it, terminates the pod immediately, and retries a
+  different host up to 3 times. A dead host now costs seconds, not a 35GB
+  download onto a GPU that can never run.
+- Downloads use **8 parallel range requests** with a byte-count check on join.
+- `api()` retries transient network faults. A single `ECONNRESET` used to abort
+  a whole run while the pod kept billing.
 
 ### What to do next
 
-**Don't retry dockerStartCmd.** It's not a matter of tuning the command —
-the entrypoint structurally prevents it from ever running our script on this
-image.
-
-1. **Jupyter-over-HTTPS is the strongest next path.** The HTTP proxy
-   (`*-8888.proxy.runpod.net`) is reachable on every host seen today,
-   including the ones where SSH was structurally impossible — it doesn't
-   route through the container's TCP ports or Docker CMD/ENTRYPOINT at all,
-   just the app-level HTTP proxy RunPod already guarantees. Driving
-   Jupyter's kernel WebSocket API (`POST /api/kernels`, then
-   `/api/kernels/{id}/channels`, sending an `execute_request` and reading
-   `stream` messages back) would run the provisioning script and stream its
-   output with the same live-log UX, without depending on SSH ports or
-   Docker internals at all. More code than what's there now, but it's the
-   one channel proven reachable on every host so far.
-2. **Alternative: find out if `/start.sh` has its own hook mechanism.**
-   Many RunPod templates source a user script from a fixed path or env var
-   before launching services (common patterns: `/workspace/*.sh` on boot,
-   or an `INIT_SCRIPT` env var). This would need inspecting the image
-   filesystem — `docker pull runpod/comfyui:cuda12.8 && docker run
-   --entrypoint cat runpod/comfyui:cuda12.8 /start.sh` (needs a GPU-less
-   pull, ~5GB, no RunPod spend) — to read `/start.sh` and see if it already
-   supports this. If it does, that's less code than the Jupyter route.
-3. **Revert to SSH, but only as a fallback with a health check that
-   distinguishes "host has no TCP port" from "still booting.**" SSH does
-   work on hosts that expose a port (proven multiple times this session
-   when a `portMappings.22` value was present) — the earlier failures were
-   real, but the fix isn't dockerStartCmd, it's detecting the no-port case
-   immediately (as `lib/podops.ts` does now) and retrying on a different
-   host rather than switching provisioning strategy entirely.
-4. **Network volume**, independent of the above: `findVolumeId()` already
-   looks for one named `ltx25-models` but none has been created yet. Once
-   provisioning works at all, creating this volume makes subsequent starts
-   ~2 min instead of ~5, and survives termination. Not the current blocker.
+1. **Create the `ltx25-models` network volume.** `findVolumeId()` already looks
+   for it and none exists. This is now the highest-value change: models
+   download **once** instead of every session, which given the observed
+   bandwidth is the difference between minutes and hours. Cost is ~$0.10/GB/mo
+   (~$5/mo for 50GB) against hours of GPU time re-downloading. Tradeoff: a
+   volume pins the pod to one datacenter, which narrows GPU availability.
+2. **Consider `hf_transfer`** if parallel curl still disappoints — but note
+   `du -cb` progress reporting would need rework.
+3. **Consolidate the two pod-creation paths.** `lib/podops.ts` and
+   `app/api/admin/videogen/route.ts` both create pods; the latter now imports
+   `bootCommand()`/`PORTS` from the former, but still duplicates the GPU list
+   and retry logic.
 
 ---
 
@@ -223,8 +225,12 @@ PORT=3000
 - **Before starting a pod**, check `curl -s -X POST https://api.runpod.io/graphql -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" -d '{"query":"query { myself { clientBalance pods { id } } }"}'`
   to confirm no pod is already running from a previous session — several
   today were left running by interrupted test runs.
-- The movie builder's "Start GPU" button and `scripts/pod.sh up` both hit the
-  same broken dockerStartCmd path right now. Fix `lib/podops.ts::bringUp()`
-  first; port the fix to `app/api/admin/videogen/route.ts` after.
-- Once provisioning is confirmed working, the actual LTX 2.5 pipeline behind
-  it is solid — that part doesn't need re-proving, only re-reaching.
+- `npm run pod up` / `down` / `status` drives the exact `lib/podops.ts` code
+  path the UI uses, straight from the terminal with streaming logs. Use it to
+  test provisioning without clicking through the app — and **always** follow up
+  with `npm run pod down`.
+- To get a root shell on any running pod without SSH, see
+  [Jupyter is wide open](#useful-jupyter-is-wide-open). Invaluable for
+  inspecting a pod mid-provision.
+- The LTX 2.5 pipeline behind provisioning is solid — it doesn't need
+  re-proving, only re-reaching.

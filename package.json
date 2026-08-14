@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "pod": "tsx --env-file=.env.local scripts/testup.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
