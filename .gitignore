@@ -42,3 +42,7 @@ next-env.d.ts
 
 # Pod lifecycle state
 scripts/.pod-state
+
+# Studio runtime state — character images, storyboards, films,
+# and the server's SSH private key for pod provisioning. Never commit.
+/data/

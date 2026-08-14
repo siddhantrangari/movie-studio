@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { SHOT_PRESETS, GRADES, buildShotPrompt, type Preset } from '@/lib/presets'
 import { RESOLUTIONS } from '@/lib/resolutions'
+import PodPanel from './PodPanel'
 
 type Shot = {
   id: string
@@ -444,6 +445,8 @@ export default function MovieClient() {
 
         {/* ── Right rail ── */}
         <aside style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'sticky', top: '5rem' }}>
+          <PodPanel onPodChange={setPodRunning} />
+
           <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: '1rem', padding: '1.1rem' }}>
             <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', color: GREY, textTransform: 'uppercase', marginBottom: '0.85rem' }}>Movie settings</p>
             <div style={{ marginBottom: '0.75rem' }}>
