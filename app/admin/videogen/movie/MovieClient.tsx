@@ -27,8 +27,7 @@ type Film = { id: string; title: string; state: string; file?: string; bytes?: n
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 const newShot = (order: number): Shot => ({
-  id: uid(), order, description: '', seconds: 6,
-  shotPreset: 'push_in', grade: 'luxury', state: 'idle',
+  id: uid(), order, description: '', seconds: 6, state: 'idle',
 })
 
 const GOLD = '#E8B94A'
@@ -43,11 +42,14 @@ function PresetGrid({ list, value, onPick, cols = 4 }: {
   list: Preset[]; value?: string; onPick: (k: string) => void; cols?: number
 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '0.5rem' }}>
+    <div className={cols === 5 ? 'ms-grades' : 'ms-presets'}>
       {list.map(p => {
         const on = value === p.key
         return (
-          <button key={p.key} onClick={() => onPick(p.key)} title={p.hint}
+          // Clicking the selected card clears it — a detailed prompt often
+          // already says how it should look, and preset phrasing fights it.
+          <button key={p.key} onClick={() => onPick(on ? '' : p.key)}
+            title={on ? 'Click again to clear' : p.hint}
             style={{
               position: 'relative', padding: 0, cursor: 'pointer', overflow: 'hidden',
               borderRadius: '0.6rem', height: '62px', textAlign: 'left',
@@ -129,8 +131,8 @@ export default function MovieClient() {
             order: (s.order as number) ?? i,
             description: (s.prompt as string) ?? '',
             seconds: (s.seconds as number) ?? 6,
-            shotPreset: (s.shotPreset as string) ?? 'push_in',
-            grade: (s.grade as string) ?? 'luxury',
+            shotPreset: s.shotPreset as string | undefined,
+            grade: s.grade as string | undefined,
             characterId: s.characterId as string | undefined,
             narration: s.narration as string | undefined,
             promptId: s.promptId as string | undefined,
@@ -285,24 +287,17 @@ export default function MovieClient() {
   return (
     <main style={{ background: '#0A1220', minHeight: '100vh', color: '#F2F5FA' }}>
       {/* Header */}
-      <header style={{
+      <header className="ms-head" style={{
         display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
         padding: '0.9rem 1.5rem', borderBottom: `1px solid ${LINE}`, background: '#0a1220',
         position: 'sticky', top: 0, zIndex: 20,
       }}>
         <input value={title} onChange={e => setTitle(e.target.value)}
           style={{ ...inp, width: 'auto', flex: '1 1 220px', fontWeight: 700, fontSize: '15px', border: '1px solid transparent', background: 'transparent', padding: '0.35rem 0.5rem' }} />
-        <span style={{ fontSize: '11px', color: GREY, whiteSpace: 'nowrap' }}>
+        <span className="ms-head-stats" style={{ fontSize: '11px', color: GREY }}>
           {shots.length} shots · ~{runtime}s · {done} ready
         </span>
-        <span style={{
-          fontSize: '10px', fontWeight: 700, padding: '0.25rem 0.6rem', borderRadius: '9999px',
-          background: podRunning ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
-          color: podRunning ? '#4ade80' : '#f87171',
-          border: `1px solid ${podRunning ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.2)'}`,
-        }}>
-          {podRunning ? '● GPU READY' : '● GPU OFFLINE'}
-        </span>
+        <PodPanel onPodChange={setPodRunning} />
         <button onClick={() => generate()} disabled={busy || !podRunning}
           style={{
             padding: '0.55rem 1.2rem', borderRadius: '0.5rem', border: 'none',
@@ -317,11 +312,35 @@ export default function MovieClient() {
         <p style={{ margin: '0.75rem 1.5rem', fontSize: '12px', color: '#f87171' }}>{err}</p>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: '1.5rem', padding: '1.5rem', maxWidth: '92rem', margin: '0 auto', alignItems: 'start' }}>
+      {/* Inline styles can't express media queries, and the whole page is
+          inline-styled — so the responsive rules live here. */}
+      <style>{`
+        .ms-grid { display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 1.5rem; padding: 1.5rem; max-width: 92rem; margin: 0 auto; align-items: start; }
+        .ms-rail { display: flex; flex-direction: column; gap: 1rem; position: sticky; top: 5rem; }
+        .ms-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+        .ms-grades  { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; }
+        @media (max-width: 1024px) {
+          .ms-grid { grid-template-columns: 1fr; }
+          /* Sticky is wrong once the rail is stacked under the editor. */
+          .ms-rail { position: static; }
+        }
+        @media (max-width: 640px) {
+          .ms-grid { padding: 1rem; gap: 1rem; }
+          .ms-presets { grid-template-columns: repeat(2, 1fr); }
+          .ms-grades  { grid-template-columns: repeat(3, 1fr); }
+          .ms-head { padding: 0.75rem 1rem !important; }
+          .ms-head-stats { width: 100%; order: 3; }
+          .ms-shot { padding: 1rem !important; }
+          /* Thumbs get a touch bigger so the arrows stay tappable. */
+          .ms-thumb { flex: 0 0 140px !important; }
+        }
+      `}</style>
+
+      <div className="ms-grid">
 
         {/* ── Shot editor ── */}
         <section>
-          <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: '1rem', padding: '1.25rem' }}>
+          <div className="ms-shot" style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: '1rem', padding: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
               <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', color: GREY, textTransform: 'uppercase' }}>
                 Shot {shots.findIndex(s => s.id === active?.id) + 1}
@@ -336,13 +355,21 @@ export default function MovieClient() {
                   rows={3} placeholder="Describe what happens in this shot — a diamond ring resting on black velvet, light catching every facet…"
                   style={{ ...inp, lineHeight: 1.6, resize: 'vertical', marginBottom: '1rem' }} />
 
-                <label style={lbl}>Look</label>
+                <label style={lbl}>
+                  Look <span style={{ color: '#64748b', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                    — optional{active.shotPreset ? ', click again to clear' : ''}
+                  </span>
+                </label>
                 <div style={{ marginBottom: '1rem' }}>
                   <PresetGrid list={SHOT_PRESETS} value={active.shotPreset}
                     onPick={k => update(active.id, { shotPreset: k })} />
                 </div>
 
-                <label style={lbl}>Grade</label>
+                <label style={lbl}>
+                  Grade <span style={{ color: '#64748b', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                    — optional{active.grade ? ', click again to clear' : ''}
+                  </span>
+                </label>
                 <div style={{ marginBottom: '1rem' }}>
                   <PresetGrid list={GRADES} value={active.grade} cols={5}
                     onPick={k => update(active.id, { grade: k })} />
@@ -403,7 +430,7 @@ export default function MovieClient() {
                   ? `/api/admin/videogen/video?filename=${encodeURIComponent(s.filename)}&subfolder=${encodeURIComponent(s.subfolder ?? 'gen')}`
                   : null
                 return (
-                  <div key={s.id} onClick={() => setActiveId(s.id)}
+                  <div key={s.id} className="ms-thumb" onClick={() => setActiveId(s.id)}
                     style={{
                       flex: '0 0 156px', cursor: 'pointer', borderRadius: '0.6rem', overflow: 'hidden',
                       border: on ? `2px solid ${GOLD}` : `1px solid ${LINE}`, background: CARD,
@@ -444,9 +471,7 @@ export default function MovieClient() {
         </section>
 
         {/* ── Right rail ── */}
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'sticky', top: '5rem' }}>
-          <PodPanel onPodChange={setPodRunning} />
-
+        <aside className="ms-rail">
           <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: '1rem', padding: '1.1rem' }}>
             <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', color: GREY, textTransform: 'uppercase', marginBottom: '0.85rem' }}>Movie settings</p>
             <div style={{ marginBottom: '0.75rem' }}>

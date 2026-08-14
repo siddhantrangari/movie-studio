@@ -24,6 +24,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
     const r = await fetch('/api/admin/videogen/pod', { cache: 'no-store' })
@@ -80,75 +81,87 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   }
 
   const running = pod?.status === 'RUNNING'
+  const label = busy ? 'GPU WORKING' : running ? 'GPU READY' : 'GPU OFFLINE'
+  const tone = busy ? GOLD : running ? '#4ade80' : '#f87171'
+
+  // Close when clicking outside, the way a menu should behave.
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
 
   return (
-    <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: '1rem', padding: '1.1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
-        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', color: GREY, textTransform: 'uppercase' }}>
-          GPU
-        </span>
-        <span style={{
-          fontSize: '10px', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '9999px',
-          background: running ? 'rgba(74,222,128,0.1)' : 'rgba(100,116,139,0.12)',
-          color: running ? '#4ade80' : '#64748b',
-          border: `1px solid ${running ? 'rgba(74,222,128,0.25)' : LINE}`,
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {/* Anchors to the right on desktop, but the badge sits near the left edge
+          on a phone, where right-anchoring pushes the panel off-screen. */}
+      <style>{`
+        .ms-pop { right: 0; }
+        @media (max-width: 640px) { .ms-pop { right: auto; left: 0; } }
+      `}</style>
+      <button onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+          fontSize: '10px', fontWeight: 700, padding: '0.3rem 0.65rem', borderRadius: '9999px',
+          background: `${tone}1a`, color: tone, border: `1px solid ${tone}40`,
+          whiteSpace: 'nowrap',
         }}>
-          {busy ? 'WORKING' : running ? 'READY' : 'OFF'}
-        </span>
-      </div>
+        <span style={{ fontSize: '11px', lineHeight: 1 }}>●</span>
+        {label}
+        {running && pod && <span style={{ opacity: 0.75, fontWeight: 600 }}>${pod.totalPerHr}/hr</span>}
+        <span style={{ opacity: 0.6, fontSize: '8px' }}>{open ? '▲' : '▼'}</span>
+      </button>
 
-      {pod && running && (
-        <div style={{ fontSize: '11px', color: GREY, marginBottom: '0.75rem', lineHeight: 1.7 }}>
-          <div title={`GPU $${pod.costPerHr}/hr + ${pod.diskGb}GB storage $${pod.storagePerHr}/hr`}>
-            <strong style={{ color: '#F2F5FA' }}>${pod.totalPerHr}/hr</strong> billing now
-            <span style={{ color: '#64748b' }}> · GPU ${pod.costPerHr} + disk ${pod.storagePerHr}</span>
-          </div>
-          <a href={pod.comfyui} target="_blank" rel="noopener" style={{ color: GOLD, fontWeight: 600 }}>Open ComfyUI ↗</a>
-          {' · '}
-          <a href={pod.jupyter} target="_blank" rel="noopener" style={{ color: GREY }}>Jupyter ↗</a>
-        </div>
-      )}
-
-      {!running && !busy && (
-        <p style={{ fontSize: '11px', color: GREY, lineHeight: 1.6, marginBottom: '0.75rem' }}>
-          Nothing is billing. Starting takes about 5 minutes — most of it downloading models.
-        </p>
-      )}
-
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <button onClick={() => run(running ? 'down' : 'up')} disabled={busy}
-          style={{
-            flex: 1, padding: '0.6rem', borderRadius: '0.5rem', border: 'none',
-            background: busy ? LINE : running ? 'rgba(248,113,113,0.12)' : GOLD,
-            color: busy ? '#64748b' : running ? '#f87171' : '#0A1220',
-            fontSize: '12px', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer',
-          }}>
-          {busy ? 'Working…' : running ? 'Shut down GPU' : 'Start GPU'}
-        </button>
-        {logs.length > 0 && (
-          <button onClick={() => setOpen(o => !o)}
-            style={{
-              padding: '0.6rem 0.8rem', borderRadius: '0.5rem', cursor: 'pointer',
-              border: `1px solid ${LINE}`, background: 'transparent', color: GREY, fontSize: '11px', fontWeight: 700,
-            }}>
-            {open ? 'Hide log' : 'Log'}
-          </button>
-        )}
-      </div>
-
-      {open && logs.length > 0 && (
-        <div ref={logRef} style={{
-          marginTop: '0.75rem', maxHeight: '260px', overflowY: 'auto',
-          background: '#070c14', border: `1px solid ${LINE}`, borderRadius: '0.5rem',
-          padding: '0.6rem 0.7rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          fontSize: '10.5px', lineHeight: 1.65,
+      {open && (
+        <div className="ms-pop" style={{
+          position: 'absolute', top: 'calc(100% + 8px)', zIndex: 60,
+          width: 'min(420px, calc(100vw - 2rem))',
+          background: CARD, border: `1px solid ${LINE}`, borderRadius: '0.75rem',
+          padding: '1rem', boxShadow: '0 18px 50px rgba(0,0,0,0.55)',
         }}>
-          {logs.map((l, i) => (
-            <div key={i} style={{ color: LEVEL_COLOR[l.level] ?? GREY, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {l.text}
+          {pod && running ? (
+            <div style={{ fontSize: '11px', color: GREY, marginBottom: '0.75rem', lineHeight: 1.7 }}>
+              <div title={`GPU $${pod.costPerHr}/hr + ${pod.diskGb}GB storage $${pod.storagePerHr}/hr`}>
+                <strong style={{ color: '#F2F5FA' }}>${pod.totalPerHr}/hr</strong> billing now
+                <span style={{ color: '#64748b' }}> · GPU ${pod.costPerHr} + disk ${pod.storagePerHr}</span>
+              </div>
+              <a href={pod.comfyui} target="_blank" rel="noopener" style={{ color: GOLD, fontWeight: 600 }}>Open ComfyUI ↗</a>
+              {' · '}
+              <a href={pod.jupyter} target="_blank" rel="noopener" style={{ color: GREY }}>Jupyter ↗</a>
             </div>
-          ))}
-          {busy && <div style={{ color: GOLD }}>▍</div>}
+          ) : (
+            <p style={{ fontSize: '11px', color: GREY, lineHeight: 1.6, marginBottom: '0.75rem' }}>
+              {busy ? 'Working — you can close this, it keeps running.'
+                    : 'Nothing is billing. Starting takes about 5 minutes, mostly downloading models.'}
+            </p>
+          )}
+
+          <button onClick={() => run(running ? 'down' : 'up')} disabled={busy}
+            style={{
+              width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: 'none',
+              background: busy ? LINE : running ? 'rgba(248,113,113,0.12)' : GOLD,
+              color: busy ? '#64748b' : running ? '#f87171' : '#0A1220',
+              fontSize: '12px', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer',
+            }}>
+            {busy ? 'Working…' : running ? 'Shut down GPU' : 'Start GPU'}
+          </button>
+
+          {logs.length > 0 && (
+            <div ref={logRef} style={{
+              marginTop: '0.75rem', maxHeight: '240px', overflowY: 'auto',
+              background: '#070c14', border: `1px solid ${LINE}`, borderRadius: '0.5rem',
+              padding: '0.6rem 0.7rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: '10.5px', lineHeight: 1.65, overflowWrap: 'anywhere',
+            }}>
+              {logs.map((l, i) => (
+                <div key={i} style={{ color: LEVEL_COLOR[l.level] ?? GREY, whiteSpace: 'pre-wrap' }}>{l.text}</div>
+              ))}
+              {busy && <div style={{ color: GOLD }}>▍</div>}
+            </div>
+          )}
         </div>
       )}
     </div>
