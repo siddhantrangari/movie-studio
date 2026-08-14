@@ -22,7 +22,7 @@ export default function AdminLogin() {
       })
 
       if (res.ok) {
-        router.push('/admin/dashboard')
+        router.push('/admin/videogen/canvas')
       } else {
         setError('Access Denied: Invalid Credentials')
         setPassword('')
@@ -43,7 +43,7 @@ export default function AdminLogin() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '1.5rem',
-        background: 'var(--navy)',
+        background: '#05080e',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -83,7 +83,7 @@ export default function AdminLogin() {
             gap: '5px',
           }}>
             <span className="ping-dot" style={{ width: '5px', height: '5px' }}></span>
-            Secured Admin Terminal
+            🌌 Veo Studio Cinema Control
           </span>
         </div>
 
@@ -92,11 +92,11 @@ export default function AdminLogin() {
           <h2 style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
-            fontSize: '1.25rem',
-            color: 'var(--white)',
+            fontSize: '1.45rem',
+            color: 'var(--gold)',
             letterSpacing: '0.05em',
           }}>
-            SIDDHANT RANGARI
+            VEO STUDIO
           </h2>
           <p style={{
             fontSize: '10px',
@@ -106,7 +106,7 @@ export default function AdminLogin() {
             marginTop: '0.25rem',
             letterSpacing: '0.08em',
           }}>
-            Identity Access Control
+            Cinema Studio Engine
           </p>
         </div>
 
@@ -179,13 +179,13 @@ export default function AdminLogin() {
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(232, 185, 74, 0.15)';
             }}
           >
-            {loading ? 'Decrypting Access Key...' : 'Establish Session'}
+            {loading ? 'Decrypting Access Key...' : 'Connect to Studio'}
           </button>
         </form>
 
         <p style={{ marginTop: '2rem', textAlign: 'center', fontSize: '11px' }}>
           <a href="/" style={{ color: '#64748b', transition: 'color 0.2s' }} onMouseEnter={(e) => (e.currentTarget.style.color = '#ffffff')} onMouseLeave={(e) => (e.currentTarget.style.color = '#64748b')}>
-            ← Return to Main Deck
+            ← Return to Home
           </a>
         </p>
       </div>
