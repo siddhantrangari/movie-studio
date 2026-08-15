@@ -109,25 +109,49 @@ checkpoints, so all three setup requirements above are satisfied.
 
 ## Generation speed (measured)
 
-RTX 4090, 704×384 (the `buildWorkflow` default), 5-second clip, via
-`npm run bench -- 5`:
+All on the Secure RTX 4090, with **distinct prompts per scene** — see the trap
+below, which invalidated an earlier round of these numbers.
 
-| | Time | Why |
-|---|---|---|
-| First clip after boot | **123.7s** | Includes loading ~34GB of weights into VRAM |
-| Every clip after | **23.1s / 23.3s** | Weights already resident — very consistent |
+Per scene:
 
-A 1-minute video is 12 × 5s clips: 62s startup + 123.7s cold + 11 × 23.2s
-≈ **7.4 min of GPU ≈ $0.09**. A second video in the same session skips the
-startup and the cold load: ~4.6 min ≈ **$0.06**.
+| Tier | Resolution | 3s scene | 5s scene |
+|---|---|---|---|
+| Draft | 704×384 | 34.0s | — |
+| HD | 1024×576 | 50.4s | — |
+| Max | 1280×704 | 51.1s | 68–73s |
 
-Two traps when re-measuring:
+Full 1-minute film, 15 × 5s scenes at Max (`npm run movie -- 3 5 15`):
 
-- **ComfyUI caches by prompt + seed.** Re-running with a fixed seed returns
-  the previous output in ~6s and looks like a miraculous speed-up.
-  `scripts/benchclip.ts` randomises the seed for this reason.
-- **`buildWorkflow` defaults to 704×384.** That is low resolution; anything
-  larger will be slower and these numbers will not hold.
+| Stage | Time |
+|---|---|
+| Pod start (warm volume) | ~1 min |
+| 15 scenes | ~17.5 min |
+| Assembly: 15-way crossfade + captions | 3.5 min |
+| **Total** | **~22 min, $0.233** |
+
+Output: 63.4s at 1280×704, 26.4 MB, H.264 + AAC stereo.
+
+### Things that will mislead you if you re-measure
+
+- **ComfyUI caches the text-encoder output per prompt.** Re-running with the
+  same prompt and only a new seed skips Gemma4-12B encoding entirely and makes
+  a 3s Draft scene look like 23s instead of 34s — a 30% understatement. An
+  earlier version of this document quoted ~$0.09/min from exactly that
+  mistake. Vary the prompt, not just the seed. Identical prompt *and* seed is
+  worse still: it returns the previous render in ~6s.
+- **Max costs the same as HD.** 1280×704 is 3.3x the pixels of Draft but only
+  1.5x the time, and only 1.4% slower than HD. There is no reason to choose HD
+  over Max for 16:9. It also fits in 24GB — no OOM on the 4090 — so a larger
+  card is not required.
+- **Longer scenes are cheaper per second of output.** 3s scenes cost 17.0s of
+  GPU per output-second; 5s scenes cost 13.6s. Fixed per-job overhead
+  dominates, so prefer fewer, longer scenes to fill a runtime.
+- **Assembly does not scale linearly.** 3 scenes assembled in 3.0s; 15 scenes
+  took 210s. It runs on the **VPS CPU**, not the GPU, so it costs nothing in
+  RunPod terms — but it occupies a core on a box shared with other production
+  apps for several minutes.
+
+Rough per-1-minute-video GPU cost: **~$0.17 Draft, ~$0.19–0.24 Max.**
 
 ## Network volume: required reading
 
@@ -155,13 +179,16 @@ Worth writing down so nobody "optimises" it later thinking it saves money. It
 does not. The volume only saves *download time*, worth roughly $0.01–0.03 per
 session at Community rates; recovering $4.38/mo would take 150–400 sessions.
 
-Per-1-minute-video economics, **measured** on the Secure 4090 (see
-[Generation speed](#generation-speed-measured)):
+Per-1-minute-video economics at **Max** quality, measured on the Secure 4090
+(see [Generation speed](#generation-speed-measured)). The Community column is
+an estimate — a 3090 is slower, so the cheaper hourly rate is partly eaten by
+longer runtimes, and it was never benchmarked because both sampled hosts were
+unusable:
 
 | Setup | Fixed/mo | Per video | 20 videos/mo |
 |---|---|---|---|
-| Secure + volume | $4.38 | ~$0.09 | ~$6.20 |
-| Community, no volume | $0 | ~$0.065 | ~$1.30 |
+| Secure + volume | $4.38 | ~$0.19 (measured) | ~$8.20 |
+| Community, no volume | $0 | ~$0.10–0.13 (est.) | ~$2.00–2.60 |
 
 Community is cheaper on paper. It was rejected because **both** Community
 hosts sampled were unusable (see below), making starts unpredictable. The
@@ -203,8 +230,10 @@ different host up to 3 times. A rejected host costs roughly $0.002.
 
 ### What to do next
 
-1. **Deploy.** These changes are committed but production still runs the old
-   path — see [Deploy](#deploy).
+1. **Resolution defaults.** `RESOLUTIONS[0]` (Draft) is still the default. Since
+   Max costs the same as HD and only ~1.5x Draft, consider defaulting new
+   storyboards to Max and keeping Draft as the explicit "iterating on prompts"
+   choice.
 2. **Watch volume headroom.** 60GB total, ~37GB models, and ComfyUI writes its
    outputs to `/workspace` too — roughly 20GB of slack. Generated clips live
    only on the pod until assembled.
