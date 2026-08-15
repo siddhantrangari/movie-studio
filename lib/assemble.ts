@@ -344,7 +344,8 @@ async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, f
     if (captions.enabled && hasCaptionText) {
       const assFile = path.join(work, 'captions.ass')
       fs.writeFileSync(assFile, buildAss(scenes, durations, captions))
-      parts.push(`[vraw]subtitles='${assFile.replace(/'/g, "\\'")}'[vcap]`)
+      const relAss = path.relative(process.cwd(), assFile).replace(/\\/g, '/')
+      parts.push(`[vraw]subtitles=f='${relAss.replace(/'/g, "\\'")}'[vcap]`)
       vOut = 'vcap'
     }
 

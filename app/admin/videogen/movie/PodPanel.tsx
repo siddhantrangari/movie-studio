@@ -155,11 +155,18 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
               <span style={{ color: GREY }}>RunPod balance</span>
               <span style={{ color: account.balance < 2 ? '#f87171' : '#F2F5FA', fontWeight: 700 }}>
                 ${account.balance.toFixed(2)}
-                {account.spendPerHr > 0 && (
-                  <span style={{ color: GREY, fontWeight: 500 }}>
-                    {' '}· {(account.balance / account.spendPerHr).toFixed(0)}h left
-                  </span>
-                )}
+                {(() => {
+                  const rate = pod && running && pod.totalPerHr > 0
+                    ? pod.totalPerHr
+                    : (account.spendPerHr > 0.1 ? account.spendPerHr : (pod?.totalPerHr || 0.69))
+                  if (!rate || rate <= 0) return null
+                  const hoursLeft = account.balance / rate
+                  return (
+                    <span style={{ color: GREY, fontWeight: 500 }}>
+                      {' '}· {hoursLeft < 1 ? `${Math.round(hoursLeft * 60)}m` : `${hoursLeft.toFixed(1)}h`} GPU left
+                    </span>
+                  )
+                })()}
               </span>
             </div>
           )}

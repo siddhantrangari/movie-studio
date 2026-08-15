@@ -906,11 +906,15 @@ export default function StudioClient() {
         flexWrap: 'wrap', gap: '1rem',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <Link href="/admin/videogen" style={{ color: 'var(--grey)', fontSize: '12px', textDecoration: 'none' }} className="hover-white-transition">
-            ← Video Gen
+          <Link href="/admin/videogen" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
+            ← Home
           </Link>
           <span style={{ color: '#1a2840' }}>|</span>
-          <Link href="/admin/videogen/canvas" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
+          <Link href="/admin/videogen/movie" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
+            🎬 Movie Generation
+          </Link>
+          <span style={{ color: '#1a2840' }}>|</span>
+          <Link href="/admin/videogen/canvas" style={{ color: 'var(--grey)', fontSize: '12px', textDecoration: 'none' }} className="hover-white-transition">
             🌌 Canvas Mode
           </Link>
           <span style={{ color: '#1a2840' }}>|</span>
