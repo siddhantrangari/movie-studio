@@ -898,11 +898,16 @@ export default function StudioClient() {
   const total = board.scenes.length
   const wantsVoice = board.audioMode === 'elevenlabs' || board.audioMode === 'both'
 
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' })
+    window.location.href = '/login'
+  }
+
   return (
     <main className="grid-bg" style={{ background: 'var(--navy)', minHeight: '100vh', paddingBottom: '4rem' }}>
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '1.25rem 2rem', borderBottom: '1px solid #1a2840', background: '#0a1220',
+        padding: '1.25rem 2rem', borderBottom: '1px solid #1a2840', background: '#05080e',
         flexWrap: 'wrap', gap: '1rem',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -995,6 +1000,17 @@ export default function StudioClient() {
           <span style={{ fontSize: '11px', color: 'var(--grey)' }}>
             {done}/{total} scenes · ~{totalDuration(board.scenes)}s
           </span>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: 'none', border: '1px solid #1a2840', color: '#94a3b8',
+              borderRadius: '0.4rem', padding: '0.35rem 0.65rem', fontSize: '11px',
+              fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem'
+            }}
+            title="Sign out of Cinema Studio"
+          >
+            <span>🚪</span> Sign Out
+          </button>
         </div>
       </header>
 

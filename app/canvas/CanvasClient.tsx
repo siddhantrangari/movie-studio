@@ -433,7 +433,7 @@ export default function CanvasClient() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button onClick={() => addNode('character')} style={{ fontSize: '11px', padding: '0.45rem 0.9rem', fontWeight: 700, borderRadius: '0.4rem', border: '1px solid #1a2840', background: '#0e182e', color: '#F2F5FA', cursor: 'pointer' }}>
             + Character (Soul ID)
           </button>
@@ -442,6 +442,20 @@ export default function CanvasClient() {
           </button>
           <button onClick={() => addNode('generator')} style={{ fontSize: '11px', padding: '0.45rem 0.9rem', fontWeight: 700, borderRadius: '0.4rem', border: '1px solid #1a2840', background: '#0e182e', color: '#F2F5FA', cursor: 'pointer' }}>
             + Video Generator
+          </button>
+          <button
+            onClick={async () => {
+              await fetch('/api/logout', { method: 'POST' })
+              window.location.href = '/login'
+            }}
+            style={{
+              background: 'none', border: '1px solid #1a2840', color: '#94a3b8',
+              borderRadius: '0.4rem', padding: '0.45rem 0.75rem', fontSize: '11px',
+              fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem'
+            }}
+            title="Sign out of Cinema Studio"
+          >
+            <span>🚪</span> Sign Out
           </button>
         </div>
       </header>

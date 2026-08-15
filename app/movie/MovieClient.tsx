@@ -334,6 +334,20 @@ export default function MovieClient() {
             {shots.length} shots · ~{runtime}s · {done} ready
           </span>
           <PodPanel onPodChange={setPodRunning} />
+          <button
+            onClick={async () => {
+              await fetch('/api/logout', { method: 'POST' })
+              window.location.href = '/login'
+            }}
+            style={{
+              background: 'none', border: '1px solid #1a2840', color: '#94a3b8',
+              borderRadius: '0.4rem', padding: '0.35rem 0.65rem', fontSize: '11px',
+              fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem'
+            }}
+            title="Sign out of Cinema Studio"
+          >
+            <span>🚪</span> Sign Out
+          </button>
         </div>
       </header>
 

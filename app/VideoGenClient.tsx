@@ -124,10 +124,16 @@ export default function VideoGenClient() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [films, setFilms] = useState<Film[]>([])
   const [characters, setCharacters] = useState<Character[]>([])
+  const [voices, setVoices] = useState<{ voiceId: string; name: string; category: string; previewUrl?: string }[]>([])
   const [genPrompt, setGenPrompt] = useState('')
   const [genSeconds, setGenSeconds] = useState(8)
   const [genRes, setGenRes] = useState(0)
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
+
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' })
+    window.location.href = '/login'
+  }
   
   // Settings overrides
   const [cameraMotion, setCameraMotion] = useState('Auto')
@@ -200,17 +206,26 @@ export default function VideoGenClient() {
     }
   }, [])
 
+  const loadVoices = useCallback(async () => {
+    try {
+      const res = await fetch('/api/videogen/voices', { cache: 'no-store' })
+      if (res.ok) setVoices((await res.json()).voices ?? [])
+    } catch {
+      // ignore
+    }
+  }, [])
+
   useEffect(() => {
     ;(async () => {
       try {
-        await Promise.all([fetchStatus(), loadProjects(), loadCharacters(), loadFilms()])
+        await Promise.all([fetchStatus(), loadProjects(), loadCharacters(), loadFilms(), loadVoices()])
       } catch {
         // ignore
       } finally {
         setInitialLoading(false)
       }
     })()
-  }, [fetchStatus, loadProjects, loadCharacters, loadFilms])
+  }, [fetchStatus, loadProjects, loadCharacters, loadFilms, loadVoices])
 
   const createProject = async () => {
     if (!newProjectName.trim()) return
@@ -479,7 +494,7 @@ export default function VideoGenClient() {
               GPU Pods: {ltxRunning ? 'Active' : 'Inactive'} (Configure)
             </button>
 
-            <Link href="/admin/videogen/movie" style={{
+            <Link href="/movie" style={{
               fontSize: '11px', textDecoration: 'none', fontWeight: 700, color: 'var(--gold)',
               padding: '0.45rem 0.85rem', borderRadius: '0.5rem',
               border: '1px solid rgba(232,185,74,0.25)', background: 'rgba(232,185,74,0.06)',
@@ -487,8 +502,21 @@ export default function VideoGenClient() {
               🎬 Movie Studio →
             </Link>
 
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#05080e', fontWeight: 'bold', fontSize: '11px' }}>
-              SR
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#05080e', fontWeight: 'bold', fontSize: '11px' }}>
+                SR
+              </div>
+              <button
+                onClick={handleLogout}
+                style={{
+                  background: 'none', border: '1px solid #1a2840', color: '#94a3b8',
+                  borderRadius: '0.4rem', padding: '0.35rem 0.65rem', fontSize: '11px',
+                  fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem'
+                }}
+                title="Sign out of Cinema Studio"
+              >
+                <span>🚪</span> Sign Out
+              </button>
             </div>
           </div>
         </header>
@@ -790,8 +818,45 @@ export default function VideoGenClient() {
                     <input type="text" value={charName} onChange={e => setCharName(e.target.value)} placeholder="e.g. Meera" style={{ width: '100%', padding: '0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '12px' }} />
                   </div>
                   <div>
-                    <label style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>Mapped Voice ID (ElevenLabs)</label>
-                    <input type="text" value={charVoiceId} onChange={e => setCharVoiceId(e.target.value)} placeholder="e.g. 21m00Tcm4TlvDq8ikWAM" style={{ width: '100%', padding: '0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '12px' }} />
+                    <label style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>
+                      Mapped Character Voice (ElevenLabs Presets & Custom)
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <select
+                        value={charVoiceId}
+                        onChange={e => setCharVoiceId(e.target.value)}
+                        style={{ flex: 1, padding: '0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '12px', outline: 'none' }}
+                      >
+                        <option value="">-- Select Voice Preset --</option>
+                        {voices.map(v => (
+                          <option key={v.voiceId} value={v.voiceId}>
+                            🎙️ {v.name} ({v.category})
+                          </option>
+                        ))}
+                      </select>
+                      {charVoiceId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const v = voices.find(x => x.voiceId === charVoiceId)
+                            if (v?.previewUrl) {
+                              const audio = new Audio(v.previewUrl)
+                              audio.play()
+                            } else {
+                              alert(`Custom Voice ID: ${charVoiceId}`)
+                            }
+                          }}
+                          style={{
+                            padding: '0.5rem 0.75rem', borderRadius: '0.4rem', border: '1px solid var(--gold)',
+                            background: 'rgba(232,185,74,0.15)', color: 'var(--gold)', fontSize: '11px',
+                            fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap'
+                          }}
+                          title="Click to listen to sample audio preview"
+                        >
+                          ▶ Preview Sample
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 

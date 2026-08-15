@@ -15,20 +15,12 @@
  * prompt behaves the same — only the detail changes.
  */
 export const RESOLUTIONS = [
-  { label: '704×384 · 16:9 Draft', w: 704, h: 384 },
-  { label: '832×480 · 16:9', w: 832, h: 480 },
-  { label: '1024×576 · 16:9 HD', w: 1024, h: 576 },
-  { label: '1280×704 · 16:9 Max', w: 1280, h: 704 },
-  { label: '480×832 · 9:16 Reels', w: 480, h: 832 },
-  { label: '704×1280 · 9:16 Reels HD', w: 704, h: 1280 },
-  { label: '576×576 · 1:1', w: 576, h: 576 },
-  { label: '960×960 · 1:1 HD', w: 960, h: 960 },
+  { label: '720P (1280×720 · 16:9 HD)', w: 1280, h: 720 },
+  { label: '1080P (1920×1080 · 16:9 Full HD)', w: 1920, h: 1080 },
+  { label: '2K (2560×1440 · 16:9 QHD)', w: 2560, h: 1440 },
+  { label: '4K (3840×2160 · 16:9 Ultra HD)', w: 3840, h: 2160 },
+  { label: '720P Vertical (720×1280 · 9:16 Shorts)', w: 720, h: 1280 },
+  { label: '1080P Vertical (1080×1920 · 9:16 Reels)', w: 1080, h: 1920 },
 ]
 
-/**
- * Max, not Draft. Measured on an RTX 4090, 1280×704 costs only ~1.5x Draft and
- * is within 1.4% of 1024×576, so defaulting to anything lower just produces
- * worse video for nearly the same money. Draft stays available for iterating
- * on prompts, where the extra detail does not change the composition.
- */
-export const DEFAULT_RESOLUTION = 3
+export const DEFAULT_RESOLUTION = 1 // 1080P Full HD
