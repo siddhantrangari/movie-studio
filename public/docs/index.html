@@ -316,6 +316,34 @@
       <h2 class="section-header">🛠️ MCP Tools Reference</h2>
       
       <div class="tool-list">
+        <!-- movie_create_character -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_create_character</span>
+            <span style="font-size: 0.75rem; color: var(--gold); background: rgba(232, 185, 74, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">CHARACTER CONSISTENCY</span>
+          </div>
+          <p class="tool-desc">Creates a consistent character profile with visual appearance traits and an optional base64 reference portrait used to seed LTX 2.5 frame-1 generation.</p>
+          <table class="param-table">
+            <thead>
+              <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><span class="inline-code">name</span></td><td>string</td><td>Character name (e.g. "Captain Ethan")</td></tr>
+              <tr><td><span class="inline-code">description</span></td><td>string</td><td>Appearance details appended to prompts for consistency</td></tr>
+              <tr><td><span class="inline-code">imageBase64</span></td><td>string</td><td>Optional Base64 PNG/JPG reference image for LTXVImgToVideo</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- movie_list_characters -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_list_characters</span>
+            <span style="font-size: 0.75rem; color: var(--green); background: rgba(74, 222, 128, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">GET CHARACTERS</span>
+          </div>
+          <p class="tool-desc">Returns a list of all saved character profiles and their reference image files.</p>
+        </div>
+
         <!-- movie_pod_status -->
         <div class="tool-card">
           <div class="tool-header">

@@ -3,15 +3,28 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
 import { findPod, bringUp, tearDown, accountBalance, comfyReady } from '../lib/podops'
-import { getStoryboards, getStoryboard, saveStoryboard, newId, Storyboard, Scene } from '../lib/studio'
+import {
+  getStoryboards,
+  getStoryboard,
+  saveStoryboard,
+  getCharacters,
+  saveCharacter,
+  deleteCharacter,
+  storeCharacterImage,
+  readCharacterImage,
+  composeScenePrompt,
+  newId,
+  Storyboard,
+  Scene,
+} from '../lib/studio'
 import { startAssembly, getFilms, getFilm } from '../lib/assemble'
 import { signedUrl, isR2Configured } from '../lib/storage'
-import { buildWorkflow, submitPrompt } from '../lib/comfyui'
+import { buildWorkflow, submitPrompt, uploadImageToPod } from '../lib/comfyui'
 
 const server = new Server(
   {
     name: 'movie-studio-mcp',
-    version: '1.0.0',
+    version: '1.1.0',
   },
   {
     capabilities: {
@@ -20,9 +33,10 @@ const server = new Server(
   }
 )
 
-function parseResolution(resStr?: string): { width: number; height: number } {
-  if (resStr === '1024x576') return { width: 1024, height: 576 }
-  if (resStr === '704x384') return { width: 704, height: 384 }
+function parseResolution(resStr?: string | number): { width: number; height: number } {
+  const str = String(resStr)
+  if (str === '1024x576' || str === '1') return { width: 1024, height: 576 }
+  if (str === '704x384' || str === '0') return { width: 704, height: 384 }
   return { width: 1280, height: 704 }
 }
 
@@ -54,6 +68,39 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'movie_create_character',
+        description: 'Create a consistent character profile with appearance description and reference image portrait for AI video consistency.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Character name' },
+            description: { type: 'string', description: 'Detailed appearance traits appended to prompts for consistency' },
+            imageBase64: { type: 'string', description: 'Base64 encoded PNG/JPEG image for initial frame seeding' },
+            imageExt: { type: 'string', description: 'Image extension, e.g. ".png" or ".jpg"', default: '.png' },
+          },
+          required: ['name', 'description'],
+        },
+      },
+      {
+        name: 'movie_list_characters',
+        description: 'List all created reference characters used for character consistency.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'movie_delete_character',
+        description: 'Delete a character profile and reference portrait.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            characterId: { type: 'string', description: 'Character ID to delete' },
+          },
+          required: ['characterId'],
+        },
+      },
+      {
         name: 'movie_create_storyboard',
         description: 'Create a new movie storyboard with scene prompts, camera angles, and optional narration.',
         inputSchema: {
@@ -78,6 +125,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 properties: {
                   title: { type: 'string' },
                   prompt: { type: 'string' },
+                  characterId: { type: 'string', description: 'Optional character ID for image-to-video consistency' },
                   seconds: { type: 'number', default: 5 },
                   narration: { type: 'string' },
                 },
@@ -90,12 +138,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'movie_generate_scene',
-        description: 'Trigger LTX 2.5 video clip workflow submission for a single scene.',
+        description: 'Trigger LTX 2.5 video clip workflow submission for a single scene with optional character consistency image seeding.',
         inputSchema: {
           type: 'object',
           properties: {
             storyboardId: { type: 'string' },
             sceneId: { type: 'string' },
+            characterId: { type: 'string', description: 'Character ID to seed reference portrait' },
+            referenceStrength: { type: 'number', description: 'Strength of character reference image (0.0 to 1.0)', default: 0.85 },
             seed: { type: 'number' },
           },
           required: ['storyboardId', 'sceneId'],
@@ -187,6 +237,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case 'movie_create_character': {
+        const { name: charName, description, imageBase64, imageExt } = args as any
+        const id = newId()
+        let imageFile: string | undefined
+
+        if (imageBase64) {
+          const buffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+          imageFile = storeCharacterImage(id, buffer, imageExt || '.png')
+        }
+
+        const char = saveCharacter({
+          id,
+          name: charName,
+          description,
+          imageFile,
+        })
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(char, null, 2),
+            },
+          ],
+        }
+      }
+
+      case 'movie_list_characters': {
+        const chars = getCharacters()
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(chars, null, 2),
+            },
+          ],
+        }
+      }
+
+      case 'movie_delete_character': {
+        const { characterId } = args as any
+        deleteCharacter(characterId)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Character ${characterId} deleted.`,
+            },
+          ],
+        }
+      }
+
       case 'movie_create_storyboard': {
         const { title, resolution, audioMode, scenes } = args as any
 
@@ -195,6 +297,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           order: i,
           title: sc.title || `Scene ${i + 1}`,
           prompt: sc.prompt,
+          characterId: sc.characterId,
           seconds: sc.seconds || 5,
           narration: sc.narration || '',
           state: 'idle',
@@ -203,7 +306,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const newSb: Storyboard = {
           id: newId(),
           title: title || 'Untitled Film',
-          resolution: resolution || '1280x704',
+          resolution: resolution === '1280x704' ? 2 : resolution === '1024x576' ? 1 : 0,
           audioMode: audioMode || 'both',
           voiceId: 'elevenlabs_default',
           scenes: createdScenes,
@@ -224,25 +327,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'movie_generate_scene': {
-        const { storyboardId, sceneId, seed } = args as any
+        const { storyboardId, sceneId, characterId, referenceStrength, seed } = args as any
         const sb = getStoryboard(storyboardId)
         if (!sb) throw new Error(`Storyboard ${storyboardId} not found`)
         const sceneIdx = sb.scenes.findIndex((s) => s.id === sceneId)
         if (sceneIdx === -1) throw new Error(`Scene ${sceneId} not found in storyboard`)
 
+        const scene = sb.scenes[sceneIdx]
+        const targetCharId = characterId || scene.characterId
+        let referenceImageName: string | undefined
+
         const pod = await findPod()
         const podId = (pod?.id as string) || null
         if (!podId) throw new Error('No active GPU pod found. Call movie_pod_start first.')
 
+        const allChars = getCharacters()
+
+        if (targetCharId) {
+          const char = allChars.find((c) => c.id === targetCharId)
+          if (char?.imageFile) {
+            const buf = readCharacterImage(char.imageFile)
+            if (buf) {
+              referenceImageName = await uploadImageToPod(podId, buf, char.imageFile)
+            }
+          }
+        }
+
+        const effectivePrompt = composeScenePrompt(scene, allChars)
         const targetSeed = seed || Math.floor(Math.random() * 1000000)
-        const dim = parseResolution(String(sb.resolution ?? '1280x704'))
+        const dim = parseResolution(sb.resolution)
 
         const workflow = buildWorkflow({
-          prompt: sb.scenes[sceneIdx].prompt,
+          prompt: effectivePrompt,
           width: dim.width,
           height: dim.height,
-          seconds: sb.scenes[sceneIdx].seconds || 5,
+          seconds: scene.seconds || 5,
           seed: targetSeed,
+          referenceImage: referenceImageName,
+          referenceStrength: referenceStrength ?? 0.85,
         })
 
         const { prompt_id } = await submitPrompt(podId, workflow)
@@ -254,7 +376,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ success: true, sceneId, promptId: prompt_id }, null, 2),
+              text: JSON.stringify({ success: true, sceneId, promptId: prompt_id, referenceImage: referenceImageName }, null, 2),
             },
           ],
         }
