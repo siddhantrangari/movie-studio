@@ -107,6 +107,28 @@ Downloads sustained **~870 MB/s** across 8 parallel range requests. ComfyUI
 reports `0.33.1` and `object_info/CheckpointLoaderSimple` lists both LTX
 checkpoints, so all three setup requirements above are satisfied.
 
+## Generation speed (measured)
+
+RTX 4090, 704×384 (the `buildWorkflow` default), 5-second clip, via
+`npm run bench -- 5`:
+
+| | Time | Why |
+|---|---|---|
+| First clip after boot | **123.7s** | Includes loading ~34GB of weights into VRAM |
+| Every clip after | **23.1s / 23.3s** | Weights already resident — very consistent |
+
+A 1-minute video is 12 × 5s clips: 62s startup + 123.7s cold + 11 × 23.2s
+≈ **7.4 min of GPU ≈ $0.09**. A second video in the same session skips the
+startup and the cold load: ~4.6 min ≈ **$0.06**.
+
+Two traps when re-measuring:
+
+- **ComfyUI caches by prompt + seed.** Re-running with a fixed seed returns
+  the previous output in ~6s and looks like a miraculous speed-up.
+  `scripts/benchclip.ts` randomises the seed for this reason.
+- **`buildWorkflow` defaults to 704×384.** That is low resolution; anything
+  larger will be slower and these numbers will not hold.
+
 ## Network volume: required reading
 
 `ltx25-models` (`fjorcr8og1`, 60GB, **EU-RO-1**) holds the ~37GB of weights so
@@ -127,6 +149,31 @@ Consequences worth knowing before changing any of this:
 - `/workspace` is the volume mount, so ComfyUI *and* the models persist. That
   is why the warm start skips both the `cp -r` and the downloads.
 
+### The volume does not pay for itself — that was a deliberate choice
+
+Worth writing down so nobody "optimises" it later thinking it saves money. It
+does not. The volume only saves *download time*, worth roughly $0.01–0.03 per
+session at Community rates; recovering $4.38/mo would take 150–400 sessions.
+
+Per-1-minute-video economics, **measured** on the Secure 4090 (see
+[Generation speed](#generation-speed-measured)):
+
+| Setup | Fixed/mo | Per video | 20 videos/mo |
+|---|---|---|---|
+| Secure + volume | $4.38 | ~$0.09 | ~$6.20 |
+| Community, no volume | $0 | ~$0.065 | ~$1.30 |
+
+Community is cheaper on paper. It was rejected because **both** Community
+hosts sampled were unusable (see below), making starts unpredictable. The
+volume is being bought as *predictability*, not savings. A Community-first
+hybrid was considered and dropped: it still pays the volume rent while rarely
+using it, so it is strictly worse than either pure option.
+
+If you ever want to revisit: `check_gpu()` and `probe_speed()` already gate
+out bad Community hosts for about $0.002 per rejection, and `lib/podops.ts`
+falls back to Community automatically if the volume is deleted. So switching
+is a matter of deleting the volume, not writing code.
+
 ## Community host quality — why we left
 
 Both Community hosts drawn during testing were unusable, which is what
@@ -144,15 +191,20 @@ Earlier sessions very likely misdiagnosed the first of these as "restarting
 ComfyUI from SSH breaks the CUDA context" — the same error appears on a bad
 host with no restart involved.
 
-`check_gpu()` still runs before any download and prints `GPU_BROKEN`;
-`lib/podops.ts` then terminates that pod and retries a different host up to 3
-times. It stays useful if the volume is ever removed.
+Two gates guard the fallback path, both running before anything expensive:
+
+- **`check_gpu()`** prints `GPU_BROKEN` when torch cannot initialise CUDA.
+- **`probe_speed()`** samples 8 parallel range requests for 6s and prints
+  `HOST_SLOW` below `SPEED_FLOOR_MBPS` (30 MB/s). Only runs when there is no
+  volume, since otherwise there is nothing to download.
+
+`lib/podops.ts` watches for either marker, terminates that pod, and retries a
+different host up to 3 times. A rejected host costs roughly $0.002.
 
 ### What to do next
 
-1. **Generate a clip end to end.** Provisioning is proven; the LTX 2.5 pipeline
-   behind it was proven in earlier sessions but has not been re-run since these
-   changes. That is the one remaining gap.
+1. **Deploy.** These changes are committed but production still runs the old
+   path — see [Deploy](#deploy).
 2. **Watch volume headroom.** 60GB total, ~37GB models, and ComfyUI writes its
    outputs to `/workspace` too — roughly 20GB of slack. Generated clips live
    only on the pod until assembled.

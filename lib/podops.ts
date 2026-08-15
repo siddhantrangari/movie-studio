@@ -75,6 +75,14 @@ const GPUS = [
   'NVIDIA L40S',
 ]
 
+/**
+ * Minimum download speed worth proceeding with, and only relevant on the
+ * fallback path where there is no volume and the models must come down. A host
+ * below this would spend longer downloading than the pod is worth; one was
+ * measured at 0.43 MB/s, which works out to roughly a day for 37GB.
+ */
+const SPEED_FLOOR_MBPS = 30
+
 export type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
 
 /**
@@ -316,6 +324,11 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
           HF_TOKEN: process.env.HF_TOKEN ?? '',
           PUBLIC_KEY: pubkey,
           PROVISION_SCRIPT: provisionScript,
+          // With a volume the models are already there, so there is nothing to
+          // measure. Without one this is the fallback path onto Community,
+          // where bandwidth decides whether the host is worth keeping.
+          PROBE_SPEED: volume ? '0' : '1',
+          SPEED_FLOOR_MBPS: String(SPEED_FLOOR_MBPS),
         },
         dockerEntrypoint: ['/bin/bash', '-c'],
         dockerStartCmd: [bootCommand()],
@@ -404,7 +417,7 @@ async function* awaitProvisioning(
         if (!text) continue
         // Phase markers are plumbing between the boot script and this loop —
         // read them for state, but don't show them.
-        if (text.includes('GPU_BROKEN')) outcome.hostBroken = true
+        if (text.includes('GPU_BROKEN') || text.includes('HOST_SLOW')) outcome.hostBroken = true
         const marker = /(?:PROVISION|CODE)_EXIT=(\d+)/.exec(text)
         if (marker) {
           if (marker[1] !== '0') failed = true

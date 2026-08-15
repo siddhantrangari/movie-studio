@@ -100,6 +100,34 @@ check_gpu() {
     return 1
 }
 
+# ── Bandwidth probe ───────────────────────────────────────────────────────────
+# Only worth running when the models still have to be downloaded, i.e. on a
+# Community host with no network volume. A host measured at 0.43 MB/s would
+# need ~24 hours for the full 37GB; one at 870 MB/s needs a minute. Six seconds
+# of sampling tells the two apart before committing to either.
+probe_speed() {
+    local url bytes mbps i
+    [ "${PROBE_SPEED:-0}" = "1" ] || return 0
+    url="https://huggingface.co/${REPO}/resolve/main/vae/ltx-2.5-audio-vae-bf16.safetensors"
+    log "Measuring this host's download speed"
+    rm -f /tmp/probe.* 2>/dev/null || true
+    for i in $(seq 0 7); do
+        curl -s --max-time 6 -r "$((i*20000000))-$((i*20000000+19999999))" \
+            -H "Authorization: Bearer ${HF_TOKEN}" "$url" -o "/tmp/probe.$i" &
+    done
+    wait
+    bytes=$(du -cb /tmp/probe.* 2>/dev/null | tail -1 | cut -f1 || echo 0)
+    rm -f /tmp/probe.* 2>/dev/null || true
+    mbps=$(( bytes / 6 / 1048576 ))
+    local floor="${SPEED_FLOOR_MBPS:-30}"
+    if [ "$mbps" -lt "$floor" ]; then
+        echo "HOST_SLOW: ${mbps} MB/s is below the ${floor} MB/s floor — 37GB would take too long here"
+        return 1
+    fi
+    ok "Download speed ~${mbps} MB/s — fast enough"
+    return 0
+}
+
 # ── Phase: code ───────────────────────────────────────────────────────────────
 do_code() {
     cd "$COMFY"
@@ -225,8 +253,10 @@ do_models() {
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$PHASE" in
   code)
-    # Before anything expensive, so a dead host is abandoned in seconds.
+    # Both gates run before anything expensive, so a bad host is abandoned in
+    # seconds rather than after a 37GB download.
     check_gpu || exit 2
+    probe_speed || exit 3
     COMFY="$BAKED"
     [ -f "$COMFY/main.py" ] || COMFY=$(find_comfy)
     [ -n "$COMFY" ] || { echo "ERROR: ComfyUI not found"; exit 1; }

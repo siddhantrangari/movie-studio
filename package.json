@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "pod": "npx tsx --env-file=.env.local scripts/testup.ts"
+    "pod": "npx tsx --env-file=.env.local scripts/testup.ts",
+    "bench": "npx tsx --env-file=.env.local scripts/benchclip.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
