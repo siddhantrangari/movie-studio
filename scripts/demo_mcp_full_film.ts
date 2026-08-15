@@ -1,5 +1,5 @@
 import { bringUp, tearDown, findPod, comfyReady } from '../lib/podops'
-import { createResetToken, saveCharacter, storeCharacterImage, saveStoryboard, newId, Storyboard, Scene } from '../lib/studio'
+import { saveCharacter, storeCharacterImage, saveStoryboard, newId, Storyboard, Scene } from '../lib/studio'
 import { buildWorkflow, submitPrompt, getJobStatus, uploadImageToPod } from '../lib/comfyui'
 import { startAssembly, getFilm } from '../lib/assemble'
 import { signedUrl, isR2Configured } from '../lib/storage'
