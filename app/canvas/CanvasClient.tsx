@@ -66,7 +66,7 @@ function NewCharacterForm({ onCreated }: { onCreated: (c: Character) => void }) 
       fd.append('name', name.trim())
       fd.append('description', description.trim())
       if (file) fd.append('image', file)
-      const res = await fetch('/api/admin/videogen/characters', { method: 'POST', body: fd })
+      const res = await fetch('/api/videogen/characters', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || 'Could not save')
       onCreated(data.character)
@@ -155,9 +155,9 @@ export default function CanvasClient() {
     ;(async () => {
       try {
         const [cRes, canvasRes, podRes] = await Promise.all([
-          fetch('/api/admin/videogen/characters', { cache: 'no-store' }),
-          fetch('/api/admin/videogen/canvas', { cache: 'no-store' }),
-          fetch('/api/admin/videogen', { cache: 'no-store' }),
+          fetch('/api/videogen/characters', { cache: 'no-store' }),
+          fetch('/api/videogen/canvas', { cache: 'no-store' }),
+          fetch('/api/videogen', { cache: 'no-store' }),
         ])
         
         if (cRes.ok) setCharacters((await cRes.json()).characters ?? [])
@@ -185,7 +185,7 @@ export default function CanvasClient() {
   const persistCanvas = async (updatedNodes = nodes, updatedEdges = edges, updatedPan = pan, updatedZoom = zoom) => {
     setSaving(true)
     try {
-      await fetch('/api/admin/videogen/canvas', {
+      await fetch('/api/videogen/canvas', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -351,7 +351,7 @@ export default function CanvasClient() {
     updateNodeData(node.id, { state: 'queued', error: undefined, filename: undefined })
     
     try {
-      const res = await fetch('/api/admin/videogen/generate', {
+      const res = await fetch('/api/videogen/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -380,7 +380,7 @@ export default function CanvasClient() {
     if (!pendingPromptIds) return
     const interval = setInterval(async () => {
       try {
-        const r = await fetch(`/api/admin/videogen/status?ids=${pendingPromptIds}`)
+        const r = await fetch(`/api/videogen/status?ids=${pendingPromptIds}`)
         if (!r.ok) return
         const data = await r.json()
         if (data.jobs) {
@@ -424,7 +424,7 @@ export default function CanvasClient() {
         backdropFilter: 'blur(12px)', borderBottom: '1px solid #1a2840',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <Link href="/admin/videogen" style={{ color: '#96A3B6', fontSize: '12px', textDecoration: 'none' }} className="hover-white-transition">
+          <Link href="/" style={{ color: '#96A3B6', fontSize: '12px', textDecoration: 'none' }} className="hover-white-transition">
             ← Traditional Board
           </Link>
           <span style={{ color: '#1a2840' }}>|</span>
@@ -556,7 +556,7 @@ export default function CanvasClient() {
               {node.type === 'generator' && (
                 <div>
                   {node.data.filename ? (
-                    <video src={`/api/admin/videogen/video?filename=${encodeURIComponent(node.data.filename)}&subfolder=${encodeURIComponent(node.data.subfolder ?? 'gen')}`}
+                    <video src={`/api/videogen/video?filename=${encodeURIComponent(node.data.filename)}&subfolder=${encodeURIComponent(node.data.subfolder ?? 'gen')}`}
                       controls loop playsInline style={{ width: '100%', borderRadius: '0.3rem', background: '#000' }} />
                   ) : (
                     <div style={{ height: '80px', background: '#070c14', borderRadius: '0.3rem', border: '1px dashed #1a2840', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#96A3B6' }}>
@@ -622,7 +622,7 @@ export default function CanvasClient() {
                 <div>
                   <label style={label}>Reference Avatar</label>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/admin/videogen/characters?image=${encodeURIComponent(selectedNode.data.imageFile)}`}
+                  <img src={`/api/videogen/characters?image=${encodeURIComponent(selectedNode.data.imageFile)}`}
                     alt={selectedNode.data.name}
                     style={{ width: '100%', height: '140px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #1a2840' }} />
                 </div>

@@ -103,18 +103,18 @@ export default function MovieClient() {
   const active = shots.find(s => s.id === activeId) ?? shots[0]
 
   const loadFilms = useCallback(async () => {
-    const r = await fetch('/api/admin/videogen/assemble', { cache: 'no-store' })
+    const r = await fetch('/api/videogen/assemble', { cache: 'no-store' })
     if (r.ok) setFilms((await r.json()).films ?? [])
   }, [])
 
   useEffect(() => {
     ;(async () => {
       const [c, v, pods, sb, proj] = await Promise.all([
-        fetch('/api/admin/videogen/characters', { cache: 'no-store' }).then(r => r.ok ? r.json() : { characters: [] }),
-        fetch('/api/admin/videogen/voices', { cache: 'no-store' }).then(r => r.ok ? r.json() : { voices: [] }),
-        fetch('/api/admin/videogen', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
-        fetch('/api/admin/videogen/storyboard', { cache: 'no-store' }).then(r => r.ok ? r.json() : { storyboards: [] }),
-        fetch('/api/admin/videogen/projects', { cache: 'no-store' }).then(r => r.ok ? r.json() : { projects: [] }),
+        fetch('/api/videogen/characters', { cache: 'no-store' }).then(r => r.ok ? r.json() : { characters: [] }),
+        fetch('/api/videogen/voices', { cache: 'no-store' }).then(r => r.ok ? r.json() : { voices: [] }),
+        fetch('/api/videogen', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
+        fetch('/api/videogen/storyboard', { cache: 'no-store' }).then(r => r.ok ? r.json() : { storyboards: [] }),
+        fetch('/api/videogen/projects', { cache: 'no-store' }).then(r => r.ok ? r.json() : { projects: [] }),
       ])
       setCharacters(c.characters ?? [])
       setVoices(v.voices ?? [])
@@ -162,7 +162,7 @@ export default function MovieClient() {
       })),
       createdAt: Date.now(), updatedAt: Date.now(),
     }
-    await fetch('/api/admin/videogen/storyboard', {
+    await fetch('/api/videogen/storyboard', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
   }, [title, resolution, audioMode, voiceId, activeProjectId])
@@ -205,7 +205,7 @@ export default function MovieClient() {
       const res = RESOLUTIONS[resolution]
       for (const shot of targets) {
         const character = characters.find(c => c.id === shot.characterId)
-        const r = await fetch('/api/admin/videogen/generate', {
+        const r = await fetch('/api/videogen/generate', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: buildShotPrompt({
@@ -236,7 +236,7 @@ export default function MovieClient() {
     if (!pending) return
     let stop = false
     const tick = async () => {
-      const r = await fetch(`/api/admin/videogen/status?ids=${pending}`, { cache: 'no-store' })
+      const r = await fetch(`/api/videogen/status?ids=${pending}`, { cache: 'no-store' })
       if (!r.ok || stop) return
       const d = await r.json()
       if (!d.jobs) return
@@ -261,7 +261,7 @@ export default function MovieClient() {
     setErr(null); setBusy(true)
     try {
       await persist(shots)
-      const r = await fetch('/api/admin/videogen/assemble', {
+      const r = await fetch('/api/videogen/assemble', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storyboardId: boardId.current, captions: { enabled: false } }),
       })
@@ -312,7 +312,7 @@ export default function MovieClient() {
         padding: '0.85rem 2.5rem', borderBottom: `1px solid ${LINE}`, background: '#070c14', position: 'sticky', top: 0, zIndex: 20
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <Link href="/admin/videogen" style={{ color: 'var(--gold)', textDecoration: 'none', fontWeight: 800, fontSize: '13px' }}>
+          <Link href="/" style={{ color: 'var(--gold)', textDecoration: 'none', fontWeight: 800, fontSize: '13px' }}>
             ← Home
           </Link>
           <span style={{ color: LINE }}>|</span>

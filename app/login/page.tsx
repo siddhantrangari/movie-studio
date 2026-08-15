@@ -32,7 +32,7 @@ export default function AdminLogin() {
     setSuccessMsg('')
 
     try {
-      const res = await fetch('/api/admin/login', {
+      const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -41,7 +41,7 @@ export default function AdminLogin() {
       const data = await res.json()
 
       if (res.ok) {
-        router.push('/admin/videogen/movie')
+        router.push('/movie')
       } else {
         setError(data.error || 'Access Denied: Invalid Credentials')
       }
@@ -59,7 +59,7 @@ export default function AdminLogin() {
     setSuccessMsg('')
 
     try {
-      const res = await fetch('/api/admin/signup', {
+      const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
@@ -70,7 +70,7 @@ export default function AdminLogin() {
       if (res.ok) {
         setSuccessMsg(data.message)
         if (data.status === 'approved') {
-          setTimeout(() => router.push('/admin/videogen/movie'), 1500)
+          setTimeout(() => router.push('/movie'), 1500)
         } else {
           setMode('login')
           setPassword('')
@@ -92,7 +92,7 @@ export default function AdminLogin() {
     setSuccessMsg('')
 
     try {
-      const res = await fetch('/api/admin/forgot-password', {
+      const res = await fetch('/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'request', email }),
@@ -122,7 +122,7 @@ export default function AdminLogin() {
     setSuccessMsg('')
 
     try {
-      const res = await fetch('/api/admin/forgot-password', {
+      const res = await fetch('/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reset', token: resetToken, newPassword }),

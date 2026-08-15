@@ -4,6 +4,6 @@ import MovieClient from './MovieClient'
 
 export default async function MoviePage() {
   const auth = await isAdminAuthenticated()
-  if (!auth) redirect('/admin/login')
+  if (!auth) redirect('/login')
   return <MovieClient />
 }

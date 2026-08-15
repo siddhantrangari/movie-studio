@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
+import VideoGenClient from './VideoGenClient'
 
 export default function Home() {
-  redirect('/admin/videogen')
+  return <VideoGenClient />
 }

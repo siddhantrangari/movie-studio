@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from './lib/auth'
 
 const COOKIE_NAME = 'sr_admin_token'
+const PROTECTED_ROUTES = ['/movie', '/studio', '/canvas', '/dashboard', '/users']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Only protect /admin routes (not /admin/login)
-  if (pathname.startsWith('/admin') && pathname !== '/admin/login') {
+  if (PROTECTED_ROUTES.some(p => pathname.startsWith(p))) {
     const token = req.cookies.get(COOKIE_NAME)?.value
     if (!token || !(await verifyToken(token))) {
-      // Redirect to login — URL does NOT reveal admin existence
-      const loginUrl = new URL('/admin/login', req.url)
+      const loginUrl = new URL('/login', req.url)
       loginUrl.searchParams.set('from', pathname)
       return NextResponse.redirect(loginUrl)
     }
@@ -21,5 +20,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/movie/:path*', '/studio/:path*', '/canvas/:path*', '/dashboard/:path*', '/users/:path*'],
 }

@@ -127,7 +127,7 @@ function CharacterPanel({
       fd.append('name', name.trim())
       fd.append('description', description.trim())
       if (file) fd.append('image', file)
-      const res = await fetch('/api/admin/videogen/characters', { method: 'POST', body: fd })
+      const res = await fetch('/api/videogen/characters', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || 'Save failed')
       setName(''); setDescription(''); setFile(null)
@@ -142,7 +142,7 @@ function CharacterPanel({
 
   const remove = async (id: string) => {
     if (!confirm('Delete this character? Scenes using it will fall back to prompt-only.')) return
-    await fetch(`/api/admin/videogen/characters?id=${id}`, { method: 'DELETE' })
+    await fetch(`/api/videogen/characters?id=${id}`, { method: 'DELETE' })
     onChange()
   }
 
@@ -155,7 +155,7 @@ function CharacterPanel({
           <div key={c.id} style={{ borderRadius: '0.75rem', overflow: 'hidden', background: 'var(--navy-card)', border: '1px solid #1a2840' }}>
             {c.imageFile ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/api/admin/videogen/characters?image=${encodeURIComponent(c.imageFile)}`}
+              <img src={`/api/videogen/characters?image=${encodeURIComponent(c.imageFile)}`}
                 alt={c.name}
                 style={{ width: '100%', height: '150px', objectFit: 'cover', display: 'block', background: '#070c14' }} />
             ) : (
@@ -239,7 +239,7 @@ function SceneRow({
   const [previewInfo, setPreviewInfo] = useState<{ duration: number; fittedSeconds: number } | null>(null)
 
   const videoUrl = scene.filename
-    ? `/api/admin/videogen/video?filename=${encodeURIComponent(scene.filename)}&subfolder=${encodeURIComponent(scene.subfolder ?? 'gen')}`
+    ? `/api/videogen/video?filename=${encodeURIComponent(scene.filename)}&subfolder=${encodeURIComponent(scene.subfolder ?? 'gen')}`
     : null
 
   const effectiveAudioMode = scene.audioMode || audioMode
@@ -631,7 +631,7 @@ export default function StudioClient() {
   const [assembling, setAssembling] = useState(false)
 
   const loadFilms = useCallback(async () => {
-    const r = await fetch('/api/admin/videogen/assemble', { cache: 'no-store' })
+    const r = await fetch('/api/videogen/assemble', { cache: 'no-store' })
     if (!r.ok) return
     const d = await r.json()
     setFilms(d.films ?? [])
@@ -641,17 +641,17 @@ export default function StudioClient() {
   }, [])
 
   const loadCharacters = useCallback(async () => {
-    const r = await fetch('/api/admin/videogen/characters', { cache: 'no-store' })
+    const r = await fetch('/api/videogen/characters', { cache: 'no-store' })
     if (r.ok) setCharacters((await r.json()).characters ?? [])
   }, [])
 
   useEffect(() => {
     ;(async () => {
       const [c, sb, v, pods] = await Promise.all([
-        fetch('/api/admin/videogen/characters', { cache: 'no-store' }).then(r => r.ok ? r.json() : { characters: [] }),
-        fetch('/api/admin/videogen/storyboard', { cache: 'no-store' }).then(r => r.ok ? r.json() : { storyboards: [] }),
-        fetch('/api/admin/videogen/voices', { cache: 'no-store' }).then(r => r.ok ? r.json() : { voices: [] }),
-        fetch('/api/admin/videogen', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
+        fetch('/api/videogen/characters', { cache: 'no-store' }).then(r => r.ok ? r.json() : { characters: [] }),
+        fetch('/api/videogen/storyboard', { cache: 'no-store' }).then(r => r.ok ? r.json() : { storyboards: [] }),
+        fetch('/api/videogen/voices', { cache: 'no-store' }).then(r => r.ok ? r.json() : { voices: [] }),
+        fetch('/api/videogen', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
       ])
       setCharacters(c.characters ?? [])
       const initialBoards = sb.storyboards?.length ? sb.storyboards : [{
@@ -681,7 +681,7 @@ export default function StudioClient() {
     setErr(null); setAssembling(true)
     try {
       await persist(board)
-      const res = await fetch('/api/admin/videogen/assemble', {
+      const res = await fetch('/api/videogen/assemble', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storyboardId: board.id, captions }),
@@ -698,14 +698,14 @@ export default function StudioClient() {
 
   const removeFilm = async (id: string) => {
     if (!confirm('Delete this film from the server?')) return
-    await fetch(`/api/admin/videogen/assemble?id=${id}`, { method: 'DELETE' })
+    await fetch(`/api/videogen/assemble?id=${id}`, { method: 'DELETE' })
     await loadFilms()
   }
 
   const persist = useCallback(async (b: Storyboard) => {
     setSaving(true)
     try {
-      const res = await fetch('/api/admin/videogen/storyboard', {
+      const res = await fetch('/api/videogen/storyboard', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(b),
@@ -797,7 +797,7 @@ export default function StudioClient() {
     if (!confirm(`Are you sure you want to delete "${board.title}"?`)) return
 
     try {
-      const res = await fetch(`/api/admin/videogen/storyboard?id=${board.id}`, {
+      const res = await fetch(`/api/videogen/storyboard?id=${board.id}`, {
         method: 'DELETE',
       })
       if (!res.ok) throw new Error('Delete failed')
@@ -831,7 +831,7 @@ export default function StudioClient() {
     setErr(null)
     await persist(board)
     try {
-      const res = await fetch('/api/admin/videogen/storyboard', {
+      const res = await fetch('/api/videogen/storyboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: board.id, sceneIds }),
@@ -855,7 +855,7 @@ export default function StudioClient() {
     let stop = false
     const tick = async () => {
       try {
-        const r = await fetch(`/api/admin/videogen/status?ids=${pendingIds}`, { cache: 'no-store' })
+        const r = await fetch(`/api/videogen/status?ids=${pendingIds}`, { cache: 'no-store' })
         if (!r.ok) return
         const data = await r.json()
         if (stop || !data.jobs) return
@@ -906,15 +906,15 @@ export default function StudioClient() {
         flexWrap: 'wrap', gap: '1rem',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <Link href="/admin/videogen" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
+          <Link href="/" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
             ← Home
           </Link>
           <span style={{ color: '#1a2840' }}>|</span>
-          <Link href="/admin/videogen/movie" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
+          <Link href="/movie" style={{ color: 'var(--gold)', fontSize: '12px', textDecoration: 'none', fontWeight: 700 }} className="hover-white-transition">
             🎬 Movie Generation
           </Link>
           <span style={{ color: '#1a2840' }}>|</span>
-          <Link href="/admin/videogen/canvas" style={{ color: 'var(--grey)', fontSize: '12px', textDecoration: 'none' }} className="hover-white-transition">
+          <Link href="/canvas" style={{ color: 'var(--grey)', fontSize: '12px', textDecoration: 'none' }} className="hover-white-transition">
             🌌 Canvas Mode
           </Link>
           <span style={{ color: '#1a2840' }}>|</span>

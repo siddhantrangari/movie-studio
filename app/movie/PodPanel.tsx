@@ -28,7 +28,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   const wrapRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
-    const r = await fetch('/api/admin/videogen/pod', { cache: 'no-store' })
+    const r = await fetch('/api/videogen/pod', { cache: 'no-store' })
     if (!r.ok) return
     const d = await r.json()
     setPod(d.pod)
@@ -49,7 +49,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
     setOpen(true)
     setLogs([{ level: 'info', text: action === 'up' ? 'Starting GPU…' : 'Shutting down…' }])
     try {
-      const res = await fetch('/api/admin/videogen/pod', {
+      const res = await fetch('/api/videogen/pod', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),

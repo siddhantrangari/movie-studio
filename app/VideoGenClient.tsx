@@ -160,7 +160,7 @@ export default function VideoGenClient() {
   // Fetch status & data
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/videogen', { cache: 'no-store' })
+      const res = await fetch('/api/videogen', { cache: 'no-store' })
       if (!res.ok) throw new Error('Status check failed')
       const data = await res.json()
       setPods({ ltx: data.ltx || null, minimax: data.minimax || null })
@@ -172,7 +172,7 @@ export default function VideoGenClient() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/videogen/projects', { cache: 'no-store' })
+      const res = await fetch('/api/videogen/projects', { cache: 'no-store' })
       if (res.ok) {
         const d = await res.json()
         setProjects(d.projects ?? [])
@@ -184,7 +184,7 @@ export default function VideoGenClient() {
 
   const loadCharacters = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/videogen/characters', { cache: 'no-store' })
+      const res = await fetch('/api/videogen/characters', { cache: 'no-store' })
       if (res.ok) setCharacters((await res.json()).characters ?? [])
     } catch {
       // ignore
@@ -193,7 +193,7 @@ export default function VideoGenClient() {
 
   const loadFilms = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/videogen/assemble', { cache: 'no-store' })
+      const res = await fetch('/api/videogen/assemble', { cache: 'no-store' })
       if (res.ok) setFilms((await res.json()).films ?? [])
     } catch {
       // ignore
@@ -215,7 +215,7 @@ export default function VideoGenClient() {
   const createProject = async () => {
     if (!newProjectName.trim()) return
     try {
-      const res = await fetch('/api/admin/videogen/projects', {
+      const res = await fetch('/api/videogen/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newProjectName.trim() })
@@ -247,7 +247,7 @@ export default function VideoGenClient() {
       }
       if (charVoiceFile) fd.append('voiceSample', charVoiceFile)
 
-      const res = await fetch('/api/admin/videogen/characters', { method: 'POST', body: fd })
+      const res = await fetch('/api/videogen/characters', { method: 'POST', body: fd })
       if (res.ok) {
         setCharName('')
         setCharDesc('')
@@ -267,7 +267,7 @@ export default function VideoGenClient() {
 
   const deleteCharHandler = async (id: string) => {
     if (!confirm('Delete character and style sheet?')) return
-    await fetch(`/api/admin/videogen/characters?id=${id}`, { method: 'DELETE' })
+    await fetch(`/api/videogen/characters?id=${id}`, { method: 'DELETE' })
     await loadCharacters()
   }
 
@@ -278,7 +278,7 @@ export default function VideoGenClient() {
     const r = RESOLUTIONS[aspectRatio]
     
     try {
-      const res = await fetch('/api/admin/videogen/generate', {
+      const res = await fetch('/api/videogen/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -323,7 +323,7 @@ export default function VideoGenClient() {
 
     const tick = async () => {
       try {
-        const res = await fetch(`/api/admin/videogen/status?ids=${pendingKey}`, { cache: 'no-store' })
+        const res = await fetch(`/api/videogen/status?ids=${pendingKey}`, { cache: 'no-store' })
         if (!res.ok) return
         const data = await res.json()
         if (cancelled || !data.jobs) return
@@ -346,7 +346,7 @@ export default function VideoGenClient() {
     const isLtx = model === 'ltx25'
     setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: true }))
     try {
-      const res = await fetch('/api/admin/videogen', {
+      const res = await fetch('/api/videogen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model }),
@@ -364,7 +364,7 @@ export default function VideoGenClient() {
     const isLtx = model === 'ltx25'
     setActionLoading(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: action }))
     try {
-      const res = await fetch('/api/admin/videogen', {
+      const res = await fetch('/api/videogen', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, action }),
@@ -431,7 +431,7 @@ export default function VideoGenClient() {
             )
           })}
 
-          <Link href="/admin/videogen/studio" style={{
+          <Link href="/studio" style={{
             display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.65rem 0.85rem',
             borderRadius: '0.5rem', fontSize: '13px', textDecoration: 'none', fontWeight: 600,
             color: 'var(--gold)', background: 'rgba(232, 185, 74, 0.05)', marginTop: '0.5rem',
@@ -440,25 +440,6 @@ export default function VideoGenClient() {
             <span>🎥</span> Movie Studio →
           </Link>
         </nav>
-
-        {/* Active Project Card */}
-        <div style={{
-          background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem',
-          marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem'
-        }}>
-          <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
-            Active Project
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '13px', fontWeight: 700, color: 'var(--gold)' }}>
-            <span>📁</span> {activeProjectName}
-          </div>
-          <button onClick={() => setShowNewProjectModal(true)} style={{
-            background: 'none', border: '1px dashed #1a2840', color: '#96A3B6', borderRadius: '0.35rem',
-            padding: '0.35rem', fontSize: '11px', cursor: 'pointer', marginTop: '0.25rem'
-          }}>
-            + Create New Project
-          </button>
-        </div>
       </aside>
 
       {/* ── Main Panel Area ── */}
