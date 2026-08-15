@@ -308,7 +308,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           title: title || 'Untitled Film',
           resolution: resolution === '1280x704' ? 2 : resolution === '1024x576' ? 1 : 0,
           audioMode: audioMode || 'both',
-          voiceId: 'elevenlabs_default',
+          voiceId: undefined,
           scenes: createdScenes,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -357,7 +357,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const targetSeed = seed || Math.floor(Math.random() * 1000000)
         const dim = parseResolution(sb.resolution)
 
-        const workflow = buildWorkflow({
+        const built = buildWorkflow({
           prompt: effectivePrompt,
           width: dim.width,
           height: dim.height,
@@ -367,7 +367,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           referenceStrength: referenceStrength ?? 0.85,
         })
 
-        const { prompt_id } = await submitPrompt(podId, workflow)
+        const { prompt_id } = await submitPrompt(podId, built.workflow)
         sb.scenes[sceneIdx].state = 'running'
         sb.scenes[sceneIdx].promptId = prompt_id
         saveStoryboard(sb)

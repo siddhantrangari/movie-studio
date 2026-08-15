@@ -308,8 +308,8 @@ async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, f
 
       const text = (s.narration ?? '').trim()
       if (!text) continue
-      const mp3 = path.join(work, `vo${i}.mp3`)
-      fs.writeFileSync(mp3, Buffer.from(await synthesize(text, sb.voiceId || CLONED_VOICE_ID)))
+      const voiceId = sb.voiceId && sb.voiceId !== 'elevenlabs_default' ? sb.voiceId : CLONED_VOICE_ID
+      fs.writeFileSync(mp3, Buffer.from(await synthesize(text, voiceId)))
       narrations.push({ file: mp3, offset: offsets[i] })
     }
 
