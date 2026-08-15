@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { RESOLUTIONS } from '@/lib/resolutions'
+import { RESOLUTIONS, DEFAULT_RESOLUTION } from '@/lib/resolutions'
 
 type Character = {
   id: string
@@ -655,7 +655,7 @@ export default function StudioClient() {
       ])
       setCharacters(c.characters ?? [])
       const initialBoards = sb.storyboards?.length ? sb.storyboards : [{
-        id: uid(), title: 'Jewellery brand film', resolution: 0,
+        id: uid(), title: 'Jewellery brand film', resolution: DEFAULT_RESOLUTION,
         audioMode: 'native', voiceId: v.voices?.[0]?.voiceId,
         scenes: [emptyScene(0)], createdAt: Date.now(), updatedAt: Date.now(),
       }]
@@ -781,7 +781,7 @@ export default function StudioClient() {
     const newSb: Storyboard = {
       id: uid(),
       title: 'New Movie Storyboard',
-      resolution: 0,
+      resolution: DEFAULT_RESOLUTION,
       audioMode: 'native',
       voiceId: voices[0]?.voiceId,
       scenes: [emptyScene(0)],
@@ -811,7 +811,7 @@ export default function StudioClient() {
         const fallbackSb: Storyboard = {
           id: uid(),
           title: 'Jewellery brand film',
-          resolution: 0,
+          resolution: DEFAULT_RESOLUTION,
           audioMode: 'native',
           voiceId: voices[0]?.voiceId,
           scenes: [emptyScene(0)],

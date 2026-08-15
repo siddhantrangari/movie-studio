@@ -24,3 +24,11 @@ export const RESOLUTIONS = [
   { label: '576×576 · 1:1', w: 576, h: 576 },
   { label: '960×960 · 1:1 HD', w: 960, h: 960 },
 ]
+
+/**
+ * Max, not Draft. Measured on an RTX 4090, 1280×704 costs only ~1.5x Draft and
+ * is within 1.4% of 1024×576, so defaulting to anything lower just produces
+ * worse video for nearly the same money. Draft stays available for iterating
+ * on prompts, where the extra detail does not change the composition.
+ */
+export const DEFAULT_RESOLUTION = 3

@@ -6,6 +6,7 @@ import {
   type Storyboard,
 } from '@/lib/studio'
 import { buildWorkflow, submitPrompt, uploadImageToPod } from '@/lib/comfyui'
+import { DEFAULT_RESOLUTION } from '@/lib/resolutions'
 import { getRunningPodId } from '@/lib/runpod'
 
 export const maxDuration = 120
@@ -32,7 +33,7 @@ export async function PUT(req: NextRequest) {
   const sb: Storyboard = {
     id: body.id || newId(),
     title: body.title || 'Untitled movie',
-    resolution: body.resolution ?? 0,
+    resolution: body.resolution ?? DEFAULT_RESOLUTION,
     audioMode: body.audioMode ?? 'native',
     voiceId: body.voiceId,
     scenes: body.scenes ?? [],

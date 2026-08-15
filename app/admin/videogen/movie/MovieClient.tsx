@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { SHOT_PRESETS, GRADES, buildShotPrompt, type Preset } from '@/lib/presets'
-import { RESOLUTIONS } from '@/lib/resolutions'
+import { RESOLUTIONS, DEFAULT_RESOLUTION } from '@/lib/resolutions'
 import PodPanel from './PodPanel'
 
 type Shot = {
@@ -86,7 +86,7 @@ export default function MovieClient() {
   const [characters, setCharacters] = useState<Character[]>([])
   const [voices, setVoices] = useState<Voice[]>([])
   const [films, setFilms] = useState<Film[]>([])
-  const [resolution, setResolution] = useState(0)
+  const [resolution, setResolution] = useState(DEFAULT_RESOLUTION)
   const [audioMode, setAudioMode] = useState('native')
   const [voiceId, setVoiceId] = useState<string>()
   const [podRunning, setPodRunning] = useState(false)
@@ -122,7 +122,7 @@ export default function MovieClient() {
       const saved = (sb.storyboards ?? []).find((s: { id: string }) => s.id === boardId.current)
       if (saved) {
         setTitle(saved.title)
-        setResolution(saved.resolution ?? 0)
+        setResolution(saved.resolution ?? DEFAULT_RESOLUTION)
         setAudioMode(saved.audioMode ?? 'native')
         if (saved.voiceId) setVoiceId(saved.voiceId)
         if (saved.scenes?.length) {
