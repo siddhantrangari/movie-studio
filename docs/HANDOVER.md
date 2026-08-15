@@ -6,10 +6,12 @@ character consistency, storyboarding, and film assembly with captions.
 **Live:** `siddhantrangari.com` → deployed separately at `/var/www/movie-studio`
 on the VPS, PM2 process `movie-studio`, port 3000.
 
-Read [Provisioning: solved, with a caveat](#provisioning-solved-with-a-caveat)
-before touching pod provisioning. Provisioning itself now works and is proven
-on a real pod; what remains flaky is community host quality. Storage rules for
-the shared VPS are in [docs/storage.md](storage.md).
+Provisioning works end to end and is proven on real pods: **4:34** from nothing
+to ready on a cold volume, **1:02** on a warm one. Read
+[Network volume: required reading](#network-volume-required-reading) before
+changing anything about pod creation — the volume forces Secure Cloud, and that
+constraint is not obvious from the API errors. Storage rules for the shared VPS
+are in [docs/storage.md](storage.md).
 
 ---
 
@@ -38,10 +40,10 @@ the shared VPS are in [docs/storage.md](storage.md).
   3. The transformer and audio VAE must be **symlinked into `checkpoints/`**
      — both LTX AV loaders read their dropdowns from that folder.
 
-## Provisioning: solved, with a caveat
+## Provisioning: solved
 
-**The dockerStartCmd blocker is fixed and proven on a real pod.** Provisioning
-now runs at container boot and streams its log into the app UI.
+**The dockerStartCmd blocker is fixed and proven on real pods.** Provisioning
+runs at container boot and streams its log into the app UI.
 
 ### What actually fixed it
 
@@ -93,47 +95,71 @@ hosts with no SSH port. This is how the image internals above were discovered
 without spending anything extra. Keep it in mind for debugging; it also remains
 the fallback provisioning channel if the entrypoint override ever regresses.
 
-## Current blocker: community host quality
+## Proven end-to-end (RTX 4090, Secure Cloud, EU-RO-1)
 
-Provisioning works. What is unreliable is **the hosts themselves**. On pod
-`aj6h0uy98hcp0o`:
+| Stage | Cold (empty volume) | Warm (models on volume) |
+|---|---|---|
+| GPU health check + ComfyUI → v0.33.1 | 0:25 | 0:25 |
+| ComfyUI serving | 2:29 | ~0:50 |
+| Models present, checkpoints linked, ready | **4:34** | **1:02** |
 
-- **The GPU was unusable.** `nvidia-smi` saw the RTX 3090, `/dev/nvidia-uvm`
-  existed, torch was the correct `2.10.0+cu128` and had not been modified — yet
+Downloads sustained **~870 MB/s** across 8 parallel range requests. ComfyUI
+reports `0.33.1` and `object_info/CheckpointLoaderSimple` lists both LTX
+checkpoints, so all three setup requirements above are satisfied.
+
+## Network volume: required reading
+
+`ltx25-models` (`fjorcr8og1`, 60GB, **EU-RO-1**) holds the ~37GB of weights so
+they are downloaded once rather than every session. It bills ~$0.006/hr
+(~$4.38/mo) whether or not a pod is running — `currentSpendPerHr` is therefore
+never exactly zero, and that is expected, not a stranded pod.
+
+**A network volume forces Secure Cloud.** Asking for `cloudType: 'COMMUNITY'`
+with a volume attached returns "no instances available" for *every* GPU — this
+is not a stock problem and no amount of retrying helps. `lib/podops.ts` picks
+`SECURE` automatically whenever a volume is found.
+
+Consequences worth knowing before changing any of this:
+
+- The pod is pinned to **EU-RO-1**, which is where the volume lives.
+- Secure Cloud costs more: the **RTX 4090 at $0.74/hr** here, against $0.22/hr
+  for a Community RTX 3090. In exchange the hosts are not broken — see below.
+- `/workspace` is the volume mount, so ComfyUI *and* the models persist. That
+  is why the warm start skips both the `cp -r` and the downloads.
+
+## Community host quality — why we left
+
+Both Community hosts drawn during testing were unusable, which is what
+motivated the volume and Secure Cloud:
+
+- **A dead GPU.** `nvidia-smi` saw the RTX 3090, `/dev/nvidia-uvm` existed, and
+  torch was the correct `2.10.0+cu128` and unmodified — yet
   `torch.cuda.is_available()` returned `False` and ComfyUI crashed with
-  `RuntimeError: CUDA unknown error`. Host-level fault, not ours.
-- **The network was unusably slow.** Measured on the pod: **0.43 MB/s** on one
-  connection (25MB in 58s); ~1.8 MB/s across 8 parallel connections. The 20.5GB
-  transformer alone would have taken hours.
+  `RuntimeError: CUDA unknown error`. Host-level fault.
+- **0.43 MB/s.** One connection moved 25MB in 58s; 8 parallel managed ~1.8
+  MB/s. The 20.5GB transformer alone would have taken hours. Compare 870 MB/s
+  on Secure Cloud.
 
-Note this is very likely what earlier sessions misdiagnosed as "restarting
-ComfyUI from SSH breaks CUDA" — the same error appears on a bad host with no
-restart involved.
+Earlier sessions very likely misdiagnosed the first of these as "restarting
+ComfyUI from SSH breaks the CUDA context" — the same error appears on a bad
+host with no restart involved.
 
-### Mitigations now in place
-
-- `check_gpu()` runs **before any download** and prints `GPU_BROKEN`.
-  `lib/podops.ts` watches for it, terminates the pod immediately, and retries a
-  different host up to 3 times. A dead host now costs seconds, not a 35GB
-  download onto a GPU that can never run.
-- Downloads use **8 parallel range requests** with a byte-count check on join.
-- `api()` retries transient network faults. A single `ECONNRESET` used to abort
-  a whole run while the pod kept billing.
+`check_gpu()` still runs before any download and prints `GPU_BROKEN`;
+`lib/podops.ts` then terminates that pod and retries a different host up to 3
+times. It stays useful if the volume is ever removed.
 
 ### What to do next
 
-1. **Create the `ltx25-models` network volume.** `findVolumeId()` already looks
-   for it and none exists. This is now the highest-value change: models
-   download **once** instead of every session, which given the observed
-   bandwidth is the difference between minutes and hours. Cost is ~$0.10/GB/mo
-   (~$5/mo for 50GB) against hours of GPU time re-downloading. Tradeoff: a
-   volume pins the pod to one datacenter, which narrows GPU availability.
-2. **Consider `hf_transfer`** if parallel curl still disappoints — but note
-   `du -cb` progress reporting would need rework.
+1. **Generate a clip end to end.** Provisioning is proven; the LTX 2.5 pipeline
+   behind it was proven in earlier sessions but has not been re-run since these
+   changes. That is the one remaining gap.
+2. **Watch volume headroom.** 60GB total, ~37GB models, and ComfyUI writes its
+   outputs to `/workspace` too — roughly 20GB of slack. Generated clips live
+   only on the pod until assembled.
 3. **Consolidate the two pod-creation paths.** `lib/podops.ts` and
-   `app/api/admin/videogen/route.ts` both create pods; the latter now imports
-   `bootCommand()`/`PORTS` from the former, but still duplicates the GPU list
-   and retry logic.
+   `app/api/admin/videogen/route.ts` both create pods. The latter imports
+   `bootCommand()`/`PORTS` now but still duplicates the GPU list and retry
+   logic — and does **not** yet attach the volume or select Secure Cloud.
 
 ---
 

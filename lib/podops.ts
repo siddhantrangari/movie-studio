@@ -20,6 +20,7 @@ import { execFileSync } from 'child_process'
 
 const REST = 'https://rest.runpod.io/v1'
 const POD_NAME = 'ltx25-videogen'
+const VOLUME_NAME = 'ltx25-models'
 const TEMPLATE_ID = 'cw3nka7d08' // RunPod official ComfyUI, CUDA 12.8
 const KEY_DIR = path.join(process.cwd(), 'data', 'ssh')
 const KEY_PATH = path.join(KEY_DIR, 'pod_key')
@@ -230,24 +231,18 @@ export async function findPod(): Promise<Record<string, unknown> | null> {
   return data.find((p) => p.name === POD_NAME) ?? null
 }
 
-export async function findVolumeId(): Promise<string | null> {
-  try {
-    const res = await fetch('https://api.runpod.io/graphql', {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ query: '{ myself { networkVolumes { id name } } }' }),
-      cache: 'no-store',
-    })
-    const j = await res.json()
-    const volumes = j?.data?.myself?.networkVolumes
-    if (Array.isArray(volumes)) {
-      const v = volumes.find((vol: { name?: string; id?: string }) => vol.name === 'ltx25-models')
-      return v?.id ?? null
-    }
-  } catch {
-    // ignore
-  }
-  return null
+/**
+ * The persistent model volume, if one exists.
+ *
+ * Without it the ~35GB of weights are re-downloaded on every single start —
+ * which on a slow community host measured at under 1 MB/s. With it they are
+ * downloaded once and every later start just mounts them.
+ */
+export async function findVolume(): Promise<{ id: string; dataCenterId: string } | null> {
+  const { data } = await api('/networkvolumes')
+  if (!Array.isArray(data)) return null
+  const v = data.find((vol: { name?: string }) => vol.name === VOLUME_NAME)
+  return v?.id ? { id: String(v.id), dataCenterId: String(v.dataCenterId ?? '') } : null
 }
 
 /**
@@ -280,9 +275,17 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
     return
   }
 
-  const networkVolumeId = await findVolumeId()
-  if (networkVolumeId) {
-    yield { level: 'ok', text: `Using network volume ${networkVolumeId}` }
+  const volume = await findVolume()
+  if (volume) {
+    yield {
+      level: 'ok',
+      text: `Using the ltx25-models volume in ${volume.dataCenterId} — models that are already there won't be downloaded again.`,
+    }
+  } else {
+    yield {
+      level: 'warn',
+      text: 'No ltx25-models volume found, so ~35GB will be downloaded onto this pod and lost when it is terminated.',
+    }
   }
 
   // A community host can be structurally broken — GPU present but unusable.
@@ -300,8 +303,14 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
         templateId: TEMPLATE_ID,
         gpuTypeIds: [gpu],
         gpuCount: 1,
-        containerDiskInGb: 100,
-        cloudType: 'COMMUNITY',
+        // The weights live on the network volume when there is one, so the
+        // container disk only has to hold the image itself.
+        containerDiskInGb: volume ? 50 : 100,
+        // Network volumes only exist in Secure Cloud — asking for COMMUNITY
+        // with one attached returns "no instances available" for every GPU.
+        // Secure costs more per hour but is also where the flaky community
+        // hosts (dead CUDA, sub-1MB/s links) stop being a problem.
+        cloudType: volume ? 'SECURE' : 'COMMUNITY',
         ports: PORTS,
         env: {
           HF_TOKEN: process.env.HF_TOKEN ?? '',
@@ -311,8 +320,11 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
         dockerEntrypoint: ['/bin/bash', '-c'],
         dockerStartCmd: [bootCommand()],
       }
-      if (networkVolumeId) {
-        body.networkVolumeId = networkVolumeId
+      if (volume) {
+        body.networkVolumeId = volume.id
+        // /workspace is where the image puts ComfyUI and its models, so
+        // mounting there is what makes both survive termination.
+        body.volumeMountPath = '/workspace'
       }
 
       const { data } = await api('/pods', {
