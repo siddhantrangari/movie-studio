@@ -4,6 +4,7 @@ import { spawn } from 'child_process'
 import crypto from 'crypto'
 import { fetchVideo } from './comfyui'
 import { synthesize, CLONED_VOICE_ID } from './elevenlabs'
+import { isR2Configured, putFilm, deleteFilmObject } from './storage'
 import type { Scene, Storyboard } from './studio'
 
 /**
@@ -70,6 +71,8 @@ export type Film = {
   title: string
   state: 'building' | 'done' | 'error'
   file?: string
+  storage?: 'r2' | 'local'
+  r2Key?: string
   bytes?: number
   duration?: number
   error?: string
@@ -113,6 +116,10 @@ function upsertFilm(film: Film) {
 
 export function deleteFilm(id: string) {
   const film = getFilm(id)
+  if (film?.storage === 'r2' || film?.r2Key) {
+    const key = film.r2Key || film.file || `${id}.mp4`
+    deleteFilmObject(key).catch(() => {})
+  }
   if (film?.file) {
     try {
       fs.unlinkSync(path.join(FILMS_DIR, film.file))
@@ -410,12 +417,34 @@ async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, f
     await run('ffmpeg', args)
 
     const bytes = fs.statSync(out).size
+    const duration = await probeDuration(out)
+    let storage: 'r2' | 'local' = 'local'
+    let r2Key: string | undefined
+
+    if (isR2Configured()) {
+      try {
+        r2Key = `${film.id}.mp4`
+        await putFilm(r2Key, out)
+        storage = 'r2'
+        try {
+          fs.unlinkSync(out)
+        } catch {
+          // file already removed
+        }
+      } catch (err) {
+        console.error('Failed to upload film to R2, falling back to local storage:', err)
+        storage = 'local'
+      }
+    }
+
     upsertFilm({
       ...film,
       state: 'done',
       file: `${film.id}.mp4`,
+      storage,
+      r2Key,
       bytes,
-      duration: await probeDuration(out),
+      duration,
     })
   } finally {
     fs.rmSync(work, { recursive: true, force: true })

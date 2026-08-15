@@ -4,6 +4,7 @@ import { Readable } from 'stream'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { getStoryboard } from '@/lib/studio'
 import { getRunningPodId } from '@/lib/runpod'
+import { isR2Configured, signedUrl } from '@/lib/storage'
 import {
   startAssembly, getFilms, getFilm, deleteFilm, readFilmFile,
   filmsDiskUsage, DEFAULT_CAPTIONS, CAPTION_FONTS, CAPTION_POSITIONS,
@@ -17,9 +18,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // ?file=<id>.mp4 streams a finished film from disk.
+  // ?file=<id>.mp4 streams a finished film from R2 (302 redirect) or disk fallback.
   const file = req.nextUrl.searchParams.get('file')
   if (file) {
+    const filmId = file.replace(/\.mp4$/, '')
+    const film = getFilm(filmId) || getFilms().find((f) => f.file === file || f.r2Key === file)
+
+    if (film?.storage === 'r2' || (isR2Configured() && film?.r2Key)) {
+      const key = film.r2Key || film.file || `${filmId}.mp4`
+      const url = await signedUrl(key)
+      if (url) {
+        return NextResponse.redirect(url, 302)
+      }
+    }
+
     const p = readFilmFile(file)
     if (!p) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
