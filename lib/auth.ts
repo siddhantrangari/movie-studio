@@ -1,30 +1,46 @@
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { cookies } from 'next/headers'
+import { getUserByEmail, User } from './users'
 
-const JWT_SECRET = process.env.JWT_SECRET!
+const JWT_SECRET = process.env.JWT_SECRET || 'sr_jwt_s3cr3t_change_this_before_deploy_min32chars!!'
 const COOKIE_NAME = 'sr_admin_token'
 const COOKIE_MAX_AGE = 60 * 60 * 8 // 8 hours
 
-export async function verifyPassword(password: string): Promise<boolean> {
-  const hash = process.env.ADMIN_PASSWORD_HASH!
-  return bcrypt.compare(password, hash)
+export type TokenPayload = {
+  id: string
+  email: string
+  role: 'admin' | 'user'
+  status: 'pending' | 'approved' | 'rejected'
+  ts: number
 }
 
-export function signToken(): string {
-  return jwt.sign({ role: 'admin', ts: Date.now() }, JWT_SECRET, { expiresIn: '8h' })
+export async function verifyPassword(password: string, hash?: string): Promise<boolean> {
+  const targetHash = hash || process.env.ADMIN_PASSWORD_HASH!
+  return bcrypt.compare(password, targetHash)
 }
 
-export async function verifyToken(token: string): Promise<boolean> {
+export function signToken(user: { id: string; email: string; role: 'admin' | 'user'; status: 'pending' | 'approved' | 'rejected' }): string {
+  const payload: TokenPayload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    ts: Date.now(),
+  }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' })
+}
+
+export async function decodeToken(token: string): Promise<TokenPayload | null> {
   try {
     const parts = token.split('.')
-    if (parts.length !== 3) return false
+    if (parts.length !== 3) return null
     const [headerB64, payloadB64, signatureB64] = parts
 
     const encoder = new TextEncoder()
     const data = encoder.encode(`${headerB64}.${payloadB64}`)
-
     const keyData = encoder.encode(JWT_SECRET)
+
     const cryptoKey = await crypto.subtle.importKey(
       'raw',
       keyData,
@@ -45,45 +61,52 @@ export async function verifyToken(token: string): Promise<boolean> {
     }
 
     const signature = base64urlToUint8Array(signatureB64)
-
-    const isValid = await crypto.subtle.verify(
-      'HMAC',
-      cryptoKey,
-      signature,
-      data
-    )
-
-    if (!isValid) return false
+    const isValid = await crypto.subtle.verify('HMAC', cryptoKey, signature, data)
+    if (!isValid) return null
 
     const payloadJson = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'))
-    const payload = JSON.parse(payloadJson)
-    
-    if (payload.exp && Date.now() >= payload.exp * 1000) {
-      return false
-    }
+    const payload = JSON.parse(payloadJson) as TokenPayload
 
-    return true
+    return payload
   } catch {
-    return false
+    return null
   }
+}
+
+export async function verifyToken(token: string): Promise<boolean> {
+  const payload = await decodeToken(token)
+  if (!payload) return false
+  return payload.status === 'approved'
 }
 
 export function getAdminCookieOptions() {
   return {
     name: COOKIE_NAME,
     maxAge: COOKIE_MAX_AGE,
-    httpOnly: true,       // NOT accessible via JS / DevTools
+    httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
   }
 }
 
-export async function isAdminAuthenticated(): Promise<boolean> {
+export async function getCurrentUser(): Promise<TokenPayload | null> {
   const cookieStore = await cookies()
   const token = cookieStore.get(COOKIE_NAME)?.value
-  if (!token) return false
-  return await verifyToken(token)
+  if (!token) return null
+  return decodeToken(token)
+}
+
+export async function isAdminAuthenticated(): Promise<boolean> {
+  const user = await getCurrentUser()
+  if (!user) return false
+  return user.status === 'approved'
+}
+
+export async function isSuperAdmin(): Promise<boolean> {
+  const user = await getCurrentUser()
+  if (!user) return false
+  return user.role === 'admin' && user.status === 'approved'
 }
 
 export const COOKIE_NAME_EXPORT = COOKIE_NAME

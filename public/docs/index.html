@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VEO STUDIO - MCP Server Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #05080e;
+      --card-bg: rgba(14, 23, 38, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --gold: #e8b94a;
+      --gold-glow: rgba(232, 185, 74, 0.2);
+      --cyan: #38bdf8;
+      --cyan-glow: rgba(56, 189, 248, 0.2);
+      --green: #4ade80;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --code-bg: #070c14;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.6;
+      padding: 0;
+      margin: 0;
+      background-image: 
+        radial-gradient(circle at 15% 20%, rgba(232, 185, 74, 0.04) 0%, transparent 40%),
+        radial-gradient(circle at 85% 70%, rgba(56, 189, 248, 0.04) 0%, transparent 40%);
+      background-attachment: fixed;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+    }
+
+    header {
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 2rem;
+      margin-bottom: 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .brand-title {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 0.3rem 0.75rem;
+      border-radius: 9999px;
+      background: var(--gold-glow);
+      border: 1px solid rgba(232, 185, 74, 0.3);
+      color: var(--gold);
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-top: 0.5rem;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      transition: all 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--gold);
+      border-color: var(--gold);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 2rem;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .card:hover {
+      border-color: rgba(232, 185, 74, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-title span {
+      color: var(--gold);
+    }
+
+    section {
+      margin-bottom: 4rem;
+    }
+
+    .section-header {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--gold);
+      margin-bottom: 1.5rem;
+      border-left: 4px solid var(--gold);
+      padding-left: 1rem;
+    }
+
+    code, pre {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      margin: 1rem 0;
+    }
+
+    .inline-code {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.85em;
+      color: var(--cyan);
+    }
+
+    .tool-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .tool-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      position: relative;
+    }
+
+    .tool-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .tool-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .tool-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .param-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .param-table th, .param-table td {
+      padding: 0.6rem 0.8rem;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .param-table th {
+      color: var(--gold);
+      font-weight: 600;
+      background: rgba(7, 12, 20, 0.5);
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--gold-glow);
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      font-weight: 700;
+      font-size: 0.85rem;
+      margin-right: 0.5rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding-top: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="brand-title">
+          🎬 VEO STUDIO <span class="brand-badge">MCP Server v1.0</span>
+        </div>
+        <p class="subtitle">Autonomous AI Video Generation & RunPod GPU Lifecycle Controller</p>
+      </div>
+      <div class="nav-links">
+        <a href="/admin/videogen/movie">Back to Studio</a>
+        <a href="/admin/login">Account Sign In</a>
+      </div>
+    </header>
+
+    <!-- Overview Cards -->
+    <div class="hero-grid">
+      <div class="card">
+        <div class="card-title"><span>⚡</span> What is Movie Studio MCP?</div>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          The Model Context Protocol (MCP) server enables AI agents (Claude Desktop, Antigravity IDE, custom scripts) to directly control LTX 2.5 video generation, RunPod GPU provisioning, storyboarding, and server-side ffmpeg film assembly.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>🚀</span> Automated Workflow</div>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+          Automatically boot GPU pods on demand, write shot storyboards with native audio/narration, generate multi-scene video clips, assemble 1-minute films with crossfades & captions, and retrieve presigned Cloudflare R2 video links.
+        </p>
+      </div>
+    </div>
+
+    <!-- Quick Setup -->
+    <section>
+      <h2 class="section-header">⚙️ Client Configuration & Setup</h2>
+      
+      <div class="card">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text);">1. Claude Desktop Config</h3>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">Add to <span class="inline-code">claude_desktop_config.json</span>:</p>
+        <pre><code>{
+  "mcpServers": {
+    "movie-studio": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "--env-file=/path/to/movie-studio/.env.local",
+        "/path/to/movie-studio/mcp/server.ts"
+      ]
+    }
+  }
+}</code></pre>
+
+        <h3 style="font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 1rem; color: var(--text);">2. Standalone Terminal Execution</h3>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">Run directly in terminal via stdio JSON-RPC:</p>
+        <pre><code>npm run mcp</code></pre>
+      </div>
+    </section>
+
+    <!-- MCP Tools Reference -->
+    <section>
+      <h2 class="section-header">🛠️ MCP Tools Reference</h2>
+      
+      <div class="tool-list">
+        <!-- movie_pod_status -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_pod_status</span>
+            <span style="font-size: 0.75rem; color: var(--green); background: rgba(74, 222, 128, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">GET STATUS</span>
+          </div>
+          <p class="tool-desc">Returns GPU pod health, ComfyUI availability, warm/cold start status, streaming boot log, and RunPod account balance.</p>
+          <pre><code>// Example Call: {}
+// Returns: { "podId": "kjiafppb7kdbtg", "ready": true, "balance": 45.20 }</code></pre>
+        </div>
+
+        <!-- movie_pod_start -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_pod_start</span>
+            <span style="font-size: 0.75rem; color: var(--gold); background: rgba(232, 185, 74, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">PROVISION</span>
+          </div>
+          <p class="tool-desc">Provisions or resumes an LTX 2.5 GPU pod on RunPod (Secure Cloud RTX 4090). Downloads models into volume and initialises ComfyUI v0.33.1.</p>
+        </div>
+
+        <!-- movie_pod_stop -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_pod_stop</span>
+            <span style="font-size: 0.75rem; color: #f87171; background: rgba(248, 113, 113, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">TERMINATE</span>
+          </div>
+          <p class="tool-desc">Terminates the active GPU pod instantly to prevent unnecessary billing.</p>
+        </div>
+
+        <!-- movie_create_storyboard -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_create_storyboard</span>
+            <span style="font-size: 0.75rem; color: var(--cyan); background: rgba(56, 189, 248, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">SCRIPT GENERATION</span>
+          </div>
+          <p class="tool-desc">Creates a new film storyboard with structured scene prompts, camera movements, audio modes, and narration voice settings.</p>
+          
+          <table class="param-table">
+            <thead>
+              <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><span class="inline-code">title</span></td><td>string</td><td>Title of the film project</td></tr>
+              <tr><td><span class="inline-code">resolution</span></td><td>string</td><td>"1280x704" (Max), "1024x576" (HD), or "704x384" (Draft)</td></tr>
+              <tr><td><span class="inline-code">audioMode</span></td><td>string</td><td>"native" (LTX audio), "elevenlabs" (narration), or "both"</td></tr>
+              <tr><td><span class="inline-code">scenes</span></td><td>array</td><td>Array of scene objects with prompts and camera settings</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- movie_generate_scene -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_generate_scene</span>
+            <span style="font-size: 0.75rem; color: var(--cyan); background: rgba(56, 189, 248, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">COMFYUI RENDER</span>
+          </div>
+          <p class="tool-desc">Triggers LTX 2.5 video clip generation for a single scene on the active GPU pod.</p>
+        </div>
+
+        <!-- movie_assemble_film -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_assemble_film</span>
+            <span style="font-size: 0.75rem; color: var(--gold); background: rgba(232, 185, 74, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">FFMPEG ASSEMBLY</span>
+          </div>
+          <p class="tool-desc">Pulls rendered scene clips from pod, crossfades video, mixes audio, burns ASS captions, and uploads completed MP4 to Cloudflare R2.</p>
+        </div>
+
+        <!-- movie_get_film -->
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">movie_get_film</span>
+            <span style="font-size: 0.75rem; color: var(--green); background: rgba(74, 222, 128, 0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">PRESIGNED URL</span>
+          </div>
+          <p class="tool-desc">Fetches assembly status and direct presigned Cloudflare R2 streaming/download link.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- End-to-End Autonomous Example -->
+    <section>
+      <h2 class="section-header">🤖 Complete Autonomous Pipeline Example</h2>
+      
+      <div class="card">
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+          Here is how an AI agent uses the MCP server to produce a 1-minute sci-fi film from prompt to presigned R2 link:
+        </p>
+
+        <ol style="margin-left: 1.5rem; color: #cbd5e1; font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.75rem;">
+          <li><span class="step-number">1</span> Call <span class="inline-code">movie_pod_start</span> to spin up GPU pod on Secure Cloud.</li>
+          <li><span class="step-number">2</span> Call <span class="inline-code">movie_create_storyboard</span> with 12 scenes (5s each @ Max 1280x704 quality).</li>
+          <li><span class="step-number">3</span> Iterate through scenes calling <span class="inline-code">movie_generate_scene</span> to render clips on ComfyUI.</li>
+          <li><span class="step-number">4</span> Call <span class="inline-code">movie_assemble_film</span> to mix narration, crossfade scenes, and upload to Cloudflare R2.</li>
+          <li><span class="step-number">5</span> Call <span class="inline-code">movie_pod_stop</span> to shut down GPU pod billing.</li>
+          <li><span class="step-number">6</span> Call <span class="inline-code">movie_get_film</span> to receive the 302 presigned Cloudflare R2 video URL.</li>
+        </ol>
+      </div>
+    </section>
+
+    <footer>
+      <p>VEO STUDIO — Cinema Studio Engine & Autonomous MCP API Documentation</p>
+    </footer>
+  </div>
+</body>
+</html>
