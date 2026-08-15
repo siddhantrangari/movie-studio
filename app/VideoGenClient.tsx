@@ -715,7 +715,7 @@ export default function VideoGenClient() {
                       {jobs.map(j => (
                         <div key={j.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                           {j.state === 'done' && j.filename ? (
-                            <video src={`/api/admin/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
+                            <video src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
                               controls loop playsInline style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }} />
                           ) : (
                             <div style={{ height: '150px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', fontWeight: 700, fontSize: '12px' }}>
@@ -731,7 +731,7 @@ export default function VideoGenClient() {
                               {copied === j.id ? 'Copied!' : 'Copy Prompt'}
                             </button>
                             {j.filename && (
-                              <a href={`/api/admin/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`} download style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 700, borderRadius: '0.35rem', padding: '0.3rem', fontSize: '10px' }}>
+                              <a href={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`} download style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 700, borderRadius: '0.35rem', padding: '0.3rem', fontSize: '10px' }}>
                                 Download MP4
                               </a>
                             )}
@@ -751,7 +751,7 @@ export default function VideoGenClient() {
                         {films.map(f => (
                           <div key={f.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                             {f.file ? (
-                              <video src={`/api/admin/videogen/assemble?file=${encodeURIComponent(f.file)}`} controls loop playsInline style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }} />
+                              <video src={`/api/videogen/assemble?file=${encodeURIComponent(f.file)}`} controls loop playsInline style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }} />
                             ) : (
                               <div style={{ height: '150px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 Processing Film...
@@ -831,7 +831,7 @@ export default function VideoGenClient() {
                   <div key={c.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', overflow: 'hidden' }}>
                     {c.imageFile ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={`/api/admin/videogen/characters?image=${encodeURIComponent(c.imageFile)}`} alt={c.name} style={{ width: '100%', height: '140px', objectFit: 'cover' }} />
+                      <img src={`/api/videogen/characters?image=${encodeURIComponent(c.imageFile)}`} alt={c.name} style={{ width: '100%', height: '140px', objectFit: 'cover' }} />
                     ) : (
                       <div style={{ height: '140px', background: '#070c14', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '11px' }}>
                         Prompt-only character
@@ -882,31 +882,53 @@ export default function VideoGenClient() {
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5, 8, 14, 0.75)',
           backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
         }}>
-          <div style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '1rem', padding: '1.5rem', width: '380px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '1rem', padding: '1.5rem', width: '420px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ fontWeight: 800, fontSize: '14px', margin: 0, color: 'var(--gold)' }}>Select Character Reference</p>
               <button onClick={() => setShowCharModal(false)} style={{ background: 'none', border: 'none', color: '#96A3B6', fontSize: '14px', cursor: 'pointer' }}>×</button>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '240px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '280px', overflowY: 'auto' }}>
               <div onClick={() => { setSelectedCharacterId(''); setShowCharModal(false) }} style={{ padding: '0.65rem 0.85rem', borderRadius: '0.5rem', background: !selectedCharacterId ? 'rgba(232,185,74,0.08)' : '#070c14', border: '1px solid #1a2840', cursor: 'pointer', fontSize: '12px' }}>
-                🚫 No character reference
+                🚫 No character reference (Prompt only)
               </div>
-              {characters.map(char => (
-                <div key={char.id} onClick={() => { setSelectedCharacterId(char.id); setShowCharModal(false) }} style={{ padding: '0.65rem 0.85rem', borderRadius: '0.5rem', background: selectedCharacterId === char.id ? 'rgba(232,185,74,0.08)' : '#070c14', border: '1px solid #1a2840', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  {char.imageFile ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`/api/admin/videogen/characters?image=${encodeURIComponent(char.imageFile)}`} alt={char.name} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: '1rem' }}>👤</span>
-                  )}
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: '12px', margin: 0 }}>{char.name}</p>
-                    <p style={{ fontSize: '10px', color: '#64748b', margin: 0 }}>{char.description.slice(0, 40)}…</p>
-                  </div>
+
+              {characters.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '1.25rem 1rem', background: '#070c14', borderRadius: '0.5rem', border: '1px dashed #1a2840' }}>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', margin: '0 0 0.3rem' }}>No characters available yet</p>
+                  <p style={{ fontSize: '10px', color: '#64748b', margin: 0, lineHeight: 1.4 }}>Create character turnaround style sheets & voice profiles for visual consistency.</p>
                 </div>
-              ))}
+              ) : (
+                characters.map(char => (
+                  <div key={char.id} onClick={() => { setSelectedCharacterId(char.id); setShowCharModal(false) }} style={{ padding: '0.65rem 0.85rem', borderRadius: '0.5rem', background: selectedCharacterId === char.id ? 'rgba(232,185,74,0.08)' : '#070c14', border: '1px solid #1a2840', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {char.imageFile ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={`/api/videogen/characters?image=${encodeURIComponent(char.imageFile)}`} alt={char.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: '1.2rem' }}>👤</span>
+                    )}
+                    <div>
+                      <p style={{ fontWeight: 700, fontSize: '12px', margin: 0, color: '#F2F5FA' }}>{char.name}</p>
+                      <p style={{ fontSize: '10px', color: '#64748b', margin: 0 }}>{char.description.slice(0, 45)}…</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
+
+            <button
+              onClick={() => {
+                setShowCharModal(false)
+                setActiveTab('characters')
+              }}
+              style={{
+                width: '100%', background: 'rgba(232, 185, 74, 0.1)', border: '1px dashed rgba(232, 185, 74, 0.4)',
+                color: 'var(--gold)', borderRadius: '0.5rem', padding: '0.65rem', fontWeight: 800,
+                fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
+              }}
+            >
+              <span>👤 + Create New Character & Style Sheet</span>
+            </button>
           </div>
         </div>
       )}
