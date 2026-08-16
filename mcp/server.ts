@@ -53,10 +53,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'movie_pod_start',
-        description: 'Start and provision an LTX 2.5 GPU pod on RunPod for video generation.',
+        description: 'Start and provision an LTX 2.5 GPU pod on RunPod for video generation. Supports standard 24GB tier (RTX 3090/4090) and Ultra 4K tier (48GB/80GB A6000/A40/L40S/A100).',
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            tier: {
+              type: 'string',
+              enum: ['standard', 'ultra_4k'],
+              description: '"standard" (24GB VRAM RTX 3090/4090 for 720p/1080p) or "ultra_4k" (48GB/80GB VRAM A6000/A40/L40S/A100 required for raw 4K diffusion)',
+              default: 'standard',
+            },
+          },
         },
       },
       {
@@ -208,8 +215,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'movie_pod_start': {
+        const tier = (args as { tier?: 'standard' | 'ultra_4k' })?.tier || 'standard'
         let logs: string[] = []
-        for await (const line of bringUp()) {
+        for await (const line of bringUp(tier)) {
           logs.push(`[${line.level.toUpperCase()}] ${line.text}`)
         }
         return {

@@ -24,6 +24,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   const [logs, setLogs] = useState<LogLine[]>([])
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
+  const [tier, setTier] = useState<'standard' | 'ultra_4k'>('standard')
   const logRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -55,12 +56,12 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
     if (action === 'down' && !confirm('Terminate the pod? Generated clips still on it will be lost.')) return
     setBusy(true)
     setOpen(true)
-    setLogs([{ level: 'info', text: action === 'up' ? 'Starting GPU…' : 'Shutting down…' }])
+    setLogs([{ level: 'info', text: action === 'up' ? `Starting ${tier === 'ultra_4k' ? 'Ultra 4K (48GB+)' : 'Standard (24GB)'} GPU…` : 'Shutting down…' }])
     try {
       const res = await fetch('/api/videogen/pod', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, tier }),
       })
       if (!res.body) throw new Error('No response stream')
 
@@ -179,6 +180,23 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
             </div>
           )}
 
+          {!running && (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.6rem',
+              marginBottom: '0.75rem', borderRadius: '0.4rem', background: '#070c14', border: `1px solid ${LINE}`,
+            }}>
+              <span style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>GPU Tier:</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '11px', cursor: 'pointer', color: tier === 'standard' ? GOLD : '#cbd5e1' }}>
+                <input type="radio" name="studioGpuTier" checked={tier === 'standard'} onChange={() => setTier('standard')} />
+                <span><strong>Standard (24GB)</strong> · RTX 3090/4090 (720p/1080p)</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '11px', cursor: 'pointer', color: tier === 'ultra_4k' ? GOLD : '#cbd5e1' }}>
+                <input type="radio" name="studioGpuTier" checked={tier === 'ultra_4k'} onChange={() => setTier('ultra_4k')} />
+                <span><strong>Ultra 4K (48GB/80GB)</strong> · A6000/A40/L40S/A100 (4K direct)</span>
+              </label>
+            </div>
+          )}
+
           <button onClick={() => run(running ? 'down' : 'up')} disabled={busy}
             style={{
               width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: 'none',
@@ -186,7 +204,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
               color: busy ? '#64748b' : running ? '#f87171' : '#0A1220',
               fontSize: '12px', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer',
             }}>
-            {busy ? 'Working…' : running ? 'Shut down GPU' : 'Start GPU'}
+            {busy ? 'Working…' : running ? 'Shut down GPU' : `Start ${tier === 'ultra_4k' ? 'Ultra 4K (48GB+)' : 'Standard (24GB)'} GPU`}
           </button>
 
           {logs.length > 0 && (

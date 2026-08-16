@@ -59,13 +59,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { model } = await req.json()
+  const { model, tier } = await req.json()
   if (!['ltx25', 'minimax'].includes(model)) {
     return NextResponse.json({ error: 'Invalid model' }, { status: 400 })
   }
 
   const isLtx = model === 'ltx25'
-  const gpuList = isLtx ? LTX_GPUS : MINIMAX_GPUS
+  const isUltra4k = tier === 'ultra_4k'
+  const gpuList = isLtx
+    ? (isUltra4k
+        ? ['NVIDIA RTX A6000', 'NVIDIA A40', 'NVIDIA L40S', 'NVIDIA A100 80GB PCIe', 'NVIDIA A100-SXM4-80GB']
+        : LTX_GPUS)
+    : MINIMAX_GPUS
   const name = isLtx ? POD_NAMES.ltx25 : POD_NAMES.minimax
 
   const env: Record<string, string> = {

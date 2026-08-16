@@ -25,6 +25,8 @@ export async function GET() {
     pod: pod
       ? {
           id: pod.id,
+          name: pod.name,
+          gpuDisplayName: (pod.machine as { gpuDisplayName?: string })?.gpuDisplayName || (pod.gpuName as string) || (pod.gpuTypeId as string) || 'NVIDIA GPU',
           status: pod.desiredStatus,
           costPerHr: gpu,
           storagePerHr: Number(storage.toFixed(4)),
@@ -36,7 +38,7 @@ export async function GET() {
       : null,
     account,
     // Lets a reloaded page re-attach to a run already in flight.
-    job: job ? { running: job.running, action: job.action, lines: job.lines } : null,
+    job: job ? { running: job.running, action: job.action, lines: job.lines, tier: job.tier } : null,
   })
 }
 
@@ -49,14 +51,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { action } = await req.json()
+  const { action, tier } = await req.json()
   if (!['up', 'down'].includes(action)) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
 
   // The run itself is detached, so navigating away no longer strands a
   // half-provisioned pod that is still billing. This response just tails it.
-  const job = startJob(action)
+  const job = startJob(action, tier || 'standard')
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({

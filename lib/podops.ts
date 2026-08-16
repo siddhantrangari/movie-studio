@@ -66,14 +66,25 @@ export function bootCommand(): string {
   ].join('\n')
 }
 
-// Cheapest first. LTX 2.5 int8 fits in 24GB.
-const GPUS = [
+// Standard 24GB tier (cheap & fast for 720p/1080p)
+export const STANDARD_GPUS = [
   'NVIDIA GeForce RTX 3090',
   'NVIDIA GeForce RTX 4090',
   'NVIDIA RTX A6000',
   'NVIDIA A40',
   'NVIDIA L40S',
 ]
+
+// Ultra 4K tier (48GB/80GB VRAM required for raw 4K 3D attention volume)
+export const ULTRA_4K_GPUS = [
+  'NVIDIA RTX A6000',          // 48GB VRAM
+  'NVIDIA A40',                // 48GB VRAM
+  'NVIDIA L40S',               // 48GB VRAM
+  'NVIDIA A100 80GB PCIe',     // 80GB VRAM
+  'NVIDIA A100-SXM4-80GB',     // 80GB VRAM
+]
+
+export type GpuTier = 'standard' | 'ultra_4k'
 
 /**
  * Minimum download speed worth proceeding with, and only relevant on the
@@ -90,7 +101,7 @@ export type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: 
  * it. Closing the tab mid-provision used to abort a half-finished pod that was
  * still billing; now the work continues and any client can re-attach to the log.
  */
-type Job = { id: string; action: string; lines: LogLine[]; running: boolean; startedAt: number }
+type Job = { id: string; action: string; tier?: GpuTier; lines: LogLine[]; running: boolean; startedAt: number }
 let current: Job | null = null
 
 export function currentJob(): Job | null {
@@ -98,13 +109,13 @@ export function currentJob(): Job | null {
 }
 
 /** Starts a run detached from the caller. Returns immediately. */
-export function startJob(action: 'up' | 'down'): Job {
+export function startJob(action: 'up' | 'down', tier: GpuTier = 'standard'): Job {
   if (current?.running) return current
-  const job: Job = { id: Math.random().toString(36).slice(2, 10), action, lines: [], running: true, startedAt: Date.now() }
+  const job: Job = { id: Math.random().toString(36).slice(2, 10), action, tier, lines: [], running: true, startedAt: Date.now() }
   current = job
   ;(async () => {
     try {
-      for await (const line of action === 'up' ? bringUp() : tearDown()) {
+      for await (const line of action === 'up' ? bringUp(tier) : tearDown()) {
         job.lines.push(line)
       }
     } catch (e) {
@@ -257,7 +268,7 @@ export async function findVolume(): Promise<{ id: string; dataCenterId: string }
  * Deploys a pod and provisions it, yielding progress as it goes.
  * Safe to call when a pod already exists — it reports and stops.
  */
-export async function* bringUp(): AsyncGenerator<LogLine> {
+export async function* bringUp(tier: GpuTier = 'standard'): AsyncGenerator<LogLine> {
   const existing = await findPod()
   if (existing) {
     const id = String(existing.id)
@@ -272,8 +283,11 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
     return
   }
 
+  const gpuList = tier === 'ultra_4k' ? ULTRA_4K_GPUS : STANDARD_GPUS
+  const tierName = tier === 'ultra_4k' ? 'Ultra 4K Tier (48GB/80GB)' : 'Standard Tier (24GB)'
+
   const pubkey = ensureKeypair()
-  yield { level: 'info', text: 'Server SSH key ready' }
+  yield { level: 'info', text: `Deploying ${tierName} GPU pod...` }
 
   let provisionScript = ''
   try {
@@ -304,7 +318,7 @@ export async function* bringUp(): AsyncGenerator<LogLine> {
     let podId = ''
     let rate = 0.22
 
-    for (const gpu of GPUS) {
+    for (const gpu of gpuList) {
       yield { level: 'info', text: `Requesting ${gpu}…` }
       const body: Record<string, unknown> = {
         name: POD_NAME,
