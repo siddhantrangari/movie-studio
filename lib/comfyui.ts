@@ -70,48 +70,61 @@ export function framesForSeconds(seconds: number, fps: number) {
 }
 
 export function buildMiniMaxWorkflow(p: GenParams) {
-  const width = p.width ?? 768
-  const height = p.height ?? 512
+  const width = p.width ?? 1280
+  const height = p.height ?? 720
   const fps = p.fps ?? 24
   const frames = Math.max(16, Math.ceil((p.seconds ?? 5) * fps))
   const seed = p.seed ?? Math.floor(Math.random() * 2 ** 31)
-  const negative = p.negativePrompt || DEFAULT_NEGATIVE
 
+  // MiniMax H3 FL2VA workflow following Comfy-Org/MiniMax-H3 reference.
+  // Uses WanVideoLatent for video latent space (built-in ComfyUI ≥0.33).
+  // Sampler: euler / simple / CFG=1 (flow-matching distilled model).
   const wf: Record<string, unknown> = {
+    // ── Model loading ─────────────────────────────────────────────────────────
     '1': { class_type: 'UNETLoader', inputs: { unet_name: 'minimax_h3_fl2va_int8_convrot.safetensors', weight_dtype: 'default' } },
     '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_32b_minimax_h3_int8_convrot.safetensors', type: 'minimax' } },
     '3': { class_type: 'VAELoader', inputs: { vae_name: 'minimax_h3_video_vae_fp16.safetensors' } },
+    // ── Text conditioning ─────────────────────────────────────────────────────
     '4': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: p.prompt } },
-    '5': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: negative } },
-    '6': { class_type: 'EmptyLatentVideo', inputs: { width, height, length: frames, batch_size: 1 } },
+    // ── Video latent (WanVideoLatent is the correct node for FL2VA in 0.33) ───
+    '6': { class_type: 'WanVideoLatent', inputs: { width, height, length: frames, batch_size: 1 } },
+    // ── Sampling ──────────────────────────────────────────────────────────────
     '7': {
       class_type: 'KSampler',
       inputs: {
         model: ['1', 0],
         positive: ['4', 0],
-        negative: ['5', 0],
+        negative: ['4', 0],   // MiniMax H3 is CFG=1 (no neg conditioning)
         latent_image: ['6', 0],
         seed,
-        steps: 25,
-        cfg: 6.0,
+        steps: 30,
+        cfg: 1.0,
         sampler_name: 'euler',
-        scheduler: 'normal',
+        scheduler: 'simple',
         denoise: 1.0,
       },
     },
+    // ── Decode & save ─────────────────────────────────────────────────────────
     '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
-    '9': { class_type: 'CreateVideo', inputs: { images: ['8', 0], fps, audio: null } },
-    '10': {
-      class_type: 'SaveVideo',
-      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
+    '9': {
+      class_type: 'VHS_VideoCombine',
+      inputs: {
+        images: ['8', 0],
+        frame_rate: fps,
+        loop_count: 0,
+        filename_prefix: 'gen/minimax',
+        format: 'video/h264-mp4',
+        pingpong: false,
+        save_output: true,
+      },
     },
   }
 
   if (p.referenceImage) {
     wf['6a'] = { class_type: 'LoadImage', inputs: { image: p.referenceImage } }
     wf['6'] = {
-      class_type: 'MiniMaxImgToVideo',
-      inputs: { image: ['6a', 0], width, height, length: frames, strength: p.referenceStrength ?? 0.85 },
+      class_type: 'WanVideoLatent',
+      inputs: { image: ['6a', 0], width, height, length: frames, batch_size: 1 },
     }
   }
 
@@ -269,10 +282,12 @@ export async function getJobStatus(podId: string, promptId: string): Promise<Job
       return { state: 'error', error: msg }
     }
     const saved = Object.values(entry.outputs ?? {}).find(
-      (o) => (o as { images?: unknown[] })?.images?.length
-    ) as { images: { filename: string; subfolder: string }[] } | undefined
+      (o) => (o as { images?: unknown[] })?.images?.length ||
+              (o as { gifs?: unknown[] })?.gifs?.length   // VHS_VideoCombine uses 'gifs'
+    ) as { images?: { filename: string; subfolder: string }[]; gifs?: { filename: string; subfolder: string }[] } | undefined
     if (saved) {
-      return { state: 'done', filename: saved.images[0].filename, subfolder: saved.images[0].subfolder }
+      const file = saved.gifs?.[0] ?? saved.images?.[0]
+      if (file) return { state: 'done', filename: file.filename, subfolder: file.subfolder }
     }
   }
 

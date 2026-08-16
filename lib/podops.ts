@@ -461,7 +461,10 @@ export async function* bringUp(
         templateId: TEMPLATE_ID,
         gpuTypeIds: [gpu],
         gpuCount: 1,
-        containerDiskInGb: volume ? 50 : 100,
+        // MiniMax H3 total = 32GB transformer + 32GB text encoder + 1GB VAE = ~65GB models.
+        // Download chunks double peak usage to ~130GB, so 200GB gives headroom.
+        // LTX 2.5 total = ~37GB models, 100GB is sufficient.
+        containerDiskInGb: volume ? 50 : isMiniMax ? 200 : 100,
         cloudType: volume ? 'SECURE' : 'COMMUNITY',
         ports: PORTS,
         env: envObj,
