@@ -157,6 +157,7 @@ export default function VideoGenClient() {
   const [showPromptBuilder, setShowPromptBuilder] = useState(false)
   const [show4kModal, setShow4kModal] = useState(false)
   const [selectedTier, setSelectedTier] = useState<'standard' | 'ultra_4k'>('standard')
+  const [promptBuilderIsWide, setPromptBuilderIsWide] = useState(false)
   const [isSwitchingPod, setIsSwitchingPod] = useState(false)
   const [promptBuilderType, setPromptBuilderType] = useState<'scene' | 'character' | 'movie'>('scene')
   const [inspectProject, setInspectProject] = useState<typeof PUBLISHED_PROJECTS[0] | null>(null)
@@ -567,7 +568,18 @@ export default function VideoGenClient() {
       </aside>
 
       {/* ── Main Panel Area ── */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minWidth: 0 }}>
+      {/* ── Main Content Area (Dynamically adjusts margin when right drawer opens to eliminate overlap) ── */}
+      <main
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflowY: 'auto',
+          minWidth: 0,
+          marginRight: showPromptBuilder ? (promptBuilderIsWide ? 'min(620px, 92vw)' : 'min(440px, 92vw)') : 0,
+          transition: 'margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
         
         {/* Top Header Row */}
         <header style={{
@@ -1503,6 +1515,7 @@ export default function VideoGenClient() {
       <PromptBuilderDrawer
         isOpen={showPromptBuilder}
         onToggle={() => setShowPromptBuilder(!showPromptBuilder)}
+        onWideToggle={setPromptBuilderIsWide}
         initialType={promptBuilderType}
         onApplyScene={(data) => {
           setGenPrompt(data.prompt)

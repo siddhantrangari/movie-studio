@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 
-type PromptBuilderResult = {
+export type PromptBuilderResult = {
   title?: string
   prompt?: string
   cameraMotion?: string
@@ -28,6 +28,7 @@ type PromptBuilderResult = {
 type Props = {
   isOpen: boolean
   onToggle: () => void
+  onWideToggle?: (wide: boolean) => void
   initialType?: 'scene' | 'character' | 'movie'
   onApplyScene?: (data: { prompt: string; cameraMotion?: string; lighting?: string; colorPalette?: string }) => void
   onApplyCharacter?: (data: { name: string; description: string; turnaroundPrompt: string }) => void
@@ -37,6 +38,7 @@ type Props = {
 export default function PromptBuilderDrawer({
   isOpen,
   onToggle,
+  onWideToggle,
   initialType = 'scene',
   onApplyScene,
   onApplyCharacter,
@@ -56,8 +58,31 @@ export default function PromptBuilderDrawer({
   const [copied, setCopied] = useState(false)
   const [isWide, setIsWide] = useState(false)
 
+  // Storyboard Shot-Specific Editing State
+  const [editingShotIdx, setEditingShotIdx] = useState<number | null>(null)
+  const [editDraft, setEditDraft] = useState<{ title: string; camera: string; seconds: number; prompt: string } | null>(null)
+  const [regeneratingShotIdx, setRegeneratingShotIdx] = useState<number | null>(null)
+
+  // 1-Click Full Movie Generation & Assembly State
+  const [movieGenState, setMovieGenState] = useState<'idle' | 'saving' | 'queueing' | 'rendering' | 'assembling' | 'done' | 'error'>('idle')
+  const [movieGenProgress, setMovieGenProgress] = useState<{
+    stage: string
+    currentShot: number
+    totalShots: number
+    shotStatus: Record<string, string>
+    filmFile?: string
+    error?: string
+  }>({ stage: '', currentShot: 0, totalShots: 0, shotStatus: {} })
+
   // Timer interval for animated generation progress
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const moviePollRef = useRef<NodeJS.Timeout | null>(null)
+
+  const handleToggleWide = () => {
+    const nextWide = !isWide
+    setIsWide(nextWide)
+    onWideToggle?.(nextWide)
+  }
 
   const handleGenerate = async () => {
     if (!input.trim()) {
@@ -69,6 +94,7 @@ export default function PromptBuilderDrawer({
     setResult(null)
     setUsage(null)
     setElapsedSec(0)
+    setMovieGenState('idle')
 
     const startTime = Date.now()
     timerRef.current = setInterval(() => {
@@ -106,6 +132,239 @@ export default function PromptBuilderDrawer({
         clearInterval(timerRef.current)
         timerRef.current = null
       }
+    }
+  }
+
+  // Edit Single Shot
+  const handleStartEditShot = (idx: number) => {
+    if (!result?.shots?.[idx]) return
+    const s = result.shots[idx]
+    setEditingShotIdx(idx)
+    setEditDraft({
+      title: s.title,
+      camera: s.camera,
+      seconds: s.seconds || 6,
+      prompt: s.prompt,
+    })
+  }
+
+  const handleSaveEditShot = (idx: number) => {
+    if (!result?.shots || !editDraft) return
+    const updatedShots = [...result.shots]
+    updatedShots[idx] = {
+      ...updatedShots[idx],
+      title: editDraft.title,
+      camera: editDraft.camera,
+      seconds: editDraft.seconds,
+      prompt: editDraft.prompt,
+    }
+    setResult({ ...result, shots: updatedShots })
+    setEditingShotIdx(null)
+    setEditDraft(null)
+  }
+
+  const handleCancelEditShot = () => {
+    setEditingShotIdx(null)
+    setEditDraft(null)
+  }
+
+  const handleDeleteShot = (idx: number) => {
+    if (!result?.shots) return
+    const updated = result.shots.filter((_, i) => i !== idx).map((s, i) => ({ ...s, order: i + 1 }))
+    setResult({ ...result, shots: updated })
+  }
+
+  const handleAddShot = () => {
+    if (!result?.shots) return
+    const nextOrder = result.shots.length + 1
+    const newShot = {
+      order: nextOrder,
+      title: `Shot #${nextOrder}: Climax / Transition`,
+      camera: '35mm Prime, Dynamic Push In',
+      lighting: '5600K Diffuse Daylight',
+      seconds: 6,
+      prompt: `At frame one, dramatic camera motion reveals character in motion with high atmospheric contrast...`,
+    }
+    setResult({ ...result, shots: [...result.shots, newShot] })
+  }
+
+  // Regenerate Single Shot
+  const handleRegenerateSingleShot = async (idx: number) => {
+    if (!result?.shots?.[idx]) return
+    const targetShot = result.shots[idx]
+    setRegeneratingShotIdx(idx)
+
+    try {
+      const res = await fetch('/api/videogen/prompt-builder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'scene',
+          input: `Regenerate a distinct cinematic shot variation for this movie scene. Movie: "${result.title || 'Cinema'}" - Logline: "${result.logline || ''}". Shot #${targetShot.order} Title: "${targetShot.title}". Current prompt: "${targetShot.prompt}". Re-craft with fresh camera dynamics and lighting.`,
+          genre,
+          cameraStyle: targetShot.camera || cameraStyle,
+          lightingStyle,
+          durationSeconds: targetShot.seconds || 6,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error || 'Failed to regenerate shot')
+
+      const newPrompt = data.result?.prompt || data.result?.shots?.[0]?.prompt
+      if (newPrompt && result.shots) {
+        const updatedShots = [...result.shots]
+        updatedShots[idx] = {
+          ...updatedShots[idx],
+          prompt: newPrompt,
+          title: data.result?.title || targetShot.title,
+          camera: data.result?.cameraMotion || targetShot.camera,
+        }
+        setResult({ ...result, shots: updatedShots })
+      }
+    } catch (e) {
+      alert(`Regeneration error: ${(e as Error).message}`)
+    } finally {
+      setRegeneratingShotIdx(null)
+    }
+  }
+
+  // 1-Click Generate Full Movie
+  const handleGenerateFullMovie = async () => {
+    if (!result?.shots || result.shots.length === 0) return
+
+    setMovieGenState('saving')
+    setMovieGenProgress({
+      stage: 'Saving storyboard & shot timeline...',
+      currentShot: 0,
+      totalShots: result.shots.length,
+      shotStatus: {},
+    })
+
+    const sbId = `sb_${Date.now()}`
+    try {
+      // Step 1: Save storyboard scenes
+      const scenes = result.shots.map((s, i) => ({
+        id: `sc_${Date.now()}_${i}`,
+        order: s.order || i + 1,
+        title: s.title,
+        description: s.prompt,
+        seconds: s.seconds || 6,
+        camera: s.camera || '',
+        state: 'idle',
+      }))
+
+      const saveRes = await fetch('/api/videogen/storyboard', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: sbId,
+          title: result.title || 'AI Director Master Film',
+          scenes,
+        }),
+      })
+      if (!saveRes.ok) throw new Error('Failed to save storyboard')
+
+      // Step 2: Queue all scenes on ComfyUI GPU
+      setMovieGenState('queueing')
+      setMovieGenProgress((p) => ({ ...p, stage: 'Queueing all shots on GPU Node...' }))
+
+      const queueRes = await fetch('/api/videogen/storyboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sbId }),
+      })
+      const queueData = await queueRes.json()
+      if (!queueRes.ok || queueData.error) {
+        throw new Error(queueData.error || 'Failed to dispatch shots to GPU')
+      }
+
+      // Step 3: Poll GPU progress until all shots are rendered
+      setMovieGenState('rendering')
+      setMovieGenProgress((p) => ({ ...p, stage: `Rendering shots on GPU (0/${result.shots!.length} completed)...` }))
+
+      const checkRenderDone = async (): Promise<boolean> => {
+        const r = await fetch(`/api/videogen/storyboard?id=${sbId}`, { cache: 'no-store' })
+        if (!r.ok) return false
+        const d = await r.json()
+        const currentScenes = d.storyboard?.scenes || []
+        const doneCount = currentScenes.filter((s: { state: string }) => s.state === 'done').length
+        const statuses: Record<string, string> = {}
+        currentScenes.forEach((s: { id: string; state: string; error?: string }) => {
+          statuses[s.id] = s.state === 'done' ? '✓ Done' : s.state === 'error' ? '⚠️ Failed' : '⏳ Rendering'
+        })
+
+        setMovieGenProgress((p) => ({
+          ...p,
+          stage: `Rendering shots on GPU (${doneCount}/${currentScenes.length} completed)...`,
+          currentShot: doneCount,
+          shotStatus: statuses,
+        }))
+
+        return doneCount === currentScenes.length && currentScenes.length > 0
+      }
+
+      // Polling loop
+      await new Promise<void>((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const allDone = await checkRenderDone()
+            if (allDone) {
+              clearInterval(interval)
+              resolve()
+            }
+          } catch (err) {
+            clearInterval(interval)
+            reject(err)
+          }
+        }, 3500)
+        moviePollRef.current = interval
+      })
+
+      // Step 4: Auto-assemble into Master Movie MP4
+      setMovieGenState('assembling')
+      setMovieGenProgress((p) => ({ ...p, stage: 'Auto-stitching shots with FFmpeg into master movie...' }))
+
+      const assembleRes = await fetch('/api/videogen/assemble', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyboardId: sbId }),
+      })
+      const assembleData = await assembleRes.json()
+      if (!assembleRes.ok || assembleData.error) {
+        throw new Error(assembleData.error || 'Failed to assemble master film')
+      }
+
+      const filmId = assembleData.film?.id || sbId
+
+      // Poll assembly completion
+      await new Promise<string>((resolve, reject) => {
+        const aInterval = setInterval(async () => {
+          try {
+            const fRes = await fetch('/api/videogen/assemble', { cache: 'no-store' })
+            if (!fRes.ok) return
+            const fData = await fRes.json()
+            const matching = (fData.films || []).find((f: { id: string; file: string; state: string }) => f.id === filmId || f.file?.includes(sbId))
+            if (matching && matching.state === 'done' && matching.file) {
+              clearInterval(aInterval)
+              resolve(matching.file)
+            }
+          } catch (e) {
+            clearInterval(aInterval)
+            reject(e)
+          }
+        }, 3000)
+      }).then((file) => {
+        setMovieGenState('done')
+        setMovieGenProgress((p) => ({
+          ...p,
+          stage: '🎉 Master Movie Assembly Complete!',
+          filmFile: file,
+        }))
+      })
+    } catch (e) {
+      setMovieGenState('error')
+      setMovieGenProgress((p) => ({ ...p, error: (e as Error).message }))
     }
   }
 
@@ -198,46 +457,55 @@ export default function PromptBuilderDrawer({
                   color: 'var(--gold, #E8B94A)',
                   margin: 0,
                   letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
                 }}
               >
-                AI PROMPT DIRECTOR
+                AI Prompt Director
               </h2>
-              <p style={{ fontSize: '10px', color: '#64748b', margin: '0.1rem 0 0' }}>
+              <p style={{ fontSize: '9.5px', color: '#94a3b8', margin: 0 }}>
                 OpenAI Photorealism Engine (Optics & Physics)
               </p>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            {/* Expand width button */}
+            {/* Expand / Narrow Toggle Button */}
             <button
-              onClick={() => setIsWide(!isWide)}
-              title={isWide ? 'Standard width' : 'Expand panel'}
+              onClick={handleToggleWide}
+              title={isWide ? 'Narrow Drawer' : 'Expand Drawer'}
               style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: 'rgba(255,255,255,0.06)',
                 border: '1px solid #1a2840',
-                color: '#94a3b8',
+                color: '#cbd5e1',
                 borderRadius: '0.35rem',
-                padding: '0.3rem 0.5rem',
+                padding: '0.3rem 0.55rem',
                 fontSize: '11px',
+                fontWeight: 700,
                 cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
               }}
             >
-              {isWide ? '⤡ Normal' : '⤢ Expand'}
+              <span>{isWide ? '⤡' : '⤢'}</span>
+              <span style={{ fontSize: '10px' }}>{isWide ? 'Narrow' : 'Expand'}</span>
             </button>
 
-            {/* Close/Collapse button */}
+            {/* Close Drawer Button */}
             <button
               onClick={onToggle}
-              title="Collapse sidebar"
+              title="Close Panel"
               style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: 'rgba(255,255,255,0.06)',
                 border: '1px solid #1a2840',
                 color: '#94a3b8',
                 borderRadius: '0.35rem',
-                padding: '0.3rem 0.5rem',
-                fontSize: '11px',
+                padding: '0.3rem 0.6rem',
+                fontSize: '12px',
                 cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               ▶
@@ -245,156 +513,171 @@ export default function PromptBuilderDrawer({
           </div>
         </div>
 
-        {/* Mode Selector Tabs */}
+        {/* Drawer Body Scroll Area */}
         <div
           style={{
-            display: 'flex',
-            borderBottom: '1px solid #1a2840',
-            background: '#070c14',
-            padding: '0.4rem 0.75rem 0',
-            gap: '0.35rem',
-          }}
-        >
-          {(
-            [
-              { key: 'scene', label: '🎬 Scene' },
-              { key: 'character', label: '👤 Character' },
-              { key: 'movie', label: '📽️ Storyboard' },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => {
-                setType(tab.key)
-                setResult(null)
-                setError(null)
-              }}
-              style={{
-                padding: '0.45rem 0.65rem',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: type === tab.key ? 'var(--gold, #E8B94A)' : '#64748b',
-                background: type === tab.key ? '#0e182e' : 'transparent',
-                border: '1px solid',
-                borderColor: type === tab.key ? '#1a2840' : 'transparent',
-                borderBottom: 'none',
-                borderRadius: '0.4rem 0.4rem 0 0',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Scrollable Form Body */}
-        <div
-          style={{
-            padding: '1.25rem',
-            overflowY: 'auto',
             flex: 1,
+            overflowY: 'auto',
+            padding: '1.25rem',
             display: 'flex',
             flexDirection: 'column',
-            gap: '1rem',
+            gap: '1.25rem',
           }}
         >
-          {/* Controls Bar */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+          {/* Mode Selector Tabs */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              background: '#070c14',
+              padding: '0.25rem',
+              borderRadius: '0.5rem',
+              border: '1px solid #1a2840',
+            }}
+          >
+            {[
+              { id: 'scene', label: '🎬 Scene', hint: 'Photoreal Video Prompt' },
+              { id: 'character', label: '👤 Character', hint: 'Consistent Face & Bio' },
+              { id: 'movie', label: '📽️ Storyboard', hint: 'Multi-Shot Full Movie' },
+            ].map((tab) => {
+              const active = type === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setType(tab.id as typeof type)
+                    setResult(null)
+                    setError(null)
+                    setMovieGenState('idle')
+                  }}
+                  style={{
+                    padding: '0.55rem 0.4rem',
+                    borderRadius: '0.4rem',
+                    background: active ? 'rgba(232,185,74,0.15)' : 'transparent',
+                    color: active ? 'var(--gold, #E8B94A)' : '#94a3b8',
+                    border: active ? '1px solid rgba(232,185,74,0.3)' : 'none',
+                    fontWeight: 700,
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Director Options Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '0.75rem' }}>
             <div>
-              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
+              <label style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', display: 'block', marginBottom: '0.3rem' }}>
                 Genre / Mood
               </label>
               <select
                 value={genre}
                 onChange={(e) => setGenre(e.target.value)}
-                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  borderRadius: '0.4rem',
+                  background: '#070c14',
+                  border: '1px solid #1a2840',
+                  color: genre.startsWith('⚡') ? 'var(--gold, #E8B94A)' : '#F2F5FA',
+                  fontWeight: 600,
+                  fontSize: '11px',
+                  outline: 'none',
+                }}
               >
-                <option>⚡ Auto / Director&apos;s Choice (AI Decides)</option>
-                <option>Cinematic Drama</option>
-                <option>Sci-Fi Action</option>
-                <option>Wildlife Adventure</option>
-                <option>Commercial Luxury</option>
-                <option>Cyberpunk Noir</option>
-                <option>Historical Period</option>
-                <option>Horror Thriller</option>
+                <option value="⚡ Auto / Director's Choice (AI Decides)">⚡ Auto / Director&apos;s Choice (AI Decides)</option>
+                <option value="Cinematic Drama">Cinematic Drama (35mm Arri Look)</option>
+                <option value="Moody Film Noir">Moody Film Noir (High Contrast Chiaroscuro)</option>
+                <option value="Cyberpunk Neon Sci-Fi">Cyberpunk Neon Sci-Fi (Anamorphic Streak)</option>
+                <option value="Ethereal Fantasy">Ethereal Fantasy (Golden Hour & Mist)</option>
+                <option value="Gritty Realistic Action">Gritty Realistic Action (180° Shutter)</option>
+                <option value="High-End Commercial">High-End Luxury Commercial (Clean Rim)</option>
+                <option value="Horror & Suspense">Horror & Suspense (Volumetric Falloff)</option>
+                <option value="Historical Period Piece">Historical Period Piece (Warm Tungsten)</option>
               </select>
             </div>
 
             <div>
-              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
+              <label style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', display: 'block', marginBottom: '0.3rem' }}>
                 Lens / Camera
               </label>
               <select
                 value={cameraStyle}
                 onChange={(e) => setCameraStyle(e.target.value)}
-                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  borderRadius: '0.4rem',
+                  background: '#070c14',
+                  border: '1px solid #1a2840',
+                  color: cameraStyle.startsWith('⚡') ? 'var(--gold, #E8B94A)' : '#F2F5FA',
+                  fontWeight: 600,
+                  fontSize: '11px',
+                  outline: 'none',
+                }}
               >
-                <option>⚡ Auto / Dynamic Camera Progression (AI Decides)</option>
-                <option>Dynamic Push In (35mm Prime)</option>
-                <option>Handheld Documentary Realism</option>
-                <option>Orbit Macro (85mm Portrait)</option>
-                <option>Anamorphic Wide (2.39:1 Flare)</option>
-                <option>Crane Down Sweeping</option>
-                <option>Locked-Off Symmetric Composition</option>
+                <option value="⚡ Auto / Dynamic Camera Progression (AI Decides)">⚡ Auto / Dynamic Camera Progression (AI Decides)</option>
+                <option value="35mm Panavision Anamorphic (Wide Cinematic)">35mm Panavision Anamorphic (Wide Cinematic)</option>
+                <option value="50mm Master Prime (Natural Human Eye FOV)">50mm Master Prime (Natural Human Eye FOV)</option>
+                <option value="85mm Portrait Prime (Tight Intimacy, Soft Bokeh)">85mm Portrait Prime (Tight Intimacy, Soft Bokeh)</option>
+                <option value="Dynamic Push In (35mm Prime)">Dynamic Push In (35mm Prime)</option>
+                <option value="Slow Tracking Dolly Lateral Move">Slow Tracking Dolly Lateral Move</option>
+                <option value="Orbiting Steadicam Arc">Orbiting Steadicam Arc</option>
+                <option value="Low Angle Heroic Track">Low Angle Heroic Track</option>
               </select>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '0.6rem' }}>
-            <div>
-              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
-                Lighting Physics
-              </label>
-              <select
-                value={lightingStyle}
-                onChange={(e) => setLightingStyle(e.target.value)}
-                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
-              >
-                <option>⚡ Auto / Cinematic Lighting Physics (AI Decides)</option>
-                <option>Natural 5600K Diffuse Daylight</option>
-                <option>Golden Hour Volumetric Backlight</option>
-                <option>Moody Noir Chiaroscuro</option>
-                <option>Warm 2400K Candlelight</option>
-                <option>Cyberpunk Neon Reflections</option>
-                <option>Studio 3-Point Softbox</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
-                Shot Duration
-              </label>
-              <select
-                value={durationSeconds}
-                onChange={(e) => setDurationSeconds(Number(e.target.value))}
-                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
-              >
-                <option value={10}>10s (Extended Multi-Beat)</option>
-                <option value={6}>6s (Standard Shot)</option>
-                <option value={4}>4s (Fast Cut)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* User Input Prompt */}
           <div>
-            <label style={{ fontSize: '10px', fontWeight: 700, color: '#F2F5FA', display: 'block', marginBottom: '0.35rem' }}>
-              {type === 'character'
-                ? 'Character concept / traits:'
-                : type === 'movie'
-                ? 'Movie logline / storyline:'
-                : 'Scene or shot concept in plain words:'}
+            <label style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', display: 'block', marginBottom: '0.3rem' }}>
+              Lighting Physics
+            </label>
+            <select
+              value={lightingStyle}
+              onChange={(e) => setLightingStyle(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                borderRadius: '0.4rem',
+                background: '#070c14',
+                border: '1px solid #1a2840',
+                color: lightingStyle.startsWith('⚡') ? 'var(--gold, #E8B94A)' : '#F2F5FA',
+                fontWeight: 600,
+                fontSize: '11px',
+                outline: 'none',
+              }}
+            >
+              <option value="⚡ Auto / Cinematic Lighting Physics (AI Decides)">⚡ Auto / Cinematic Lighting Physics (AI Decides)</option>
+              <option value="Natural 5600K Diffuse Daylight">Natural 5600K Diffuse Daylight (Soft Sky Fill)</option>
+              <option value="Golden Hour 3200K Low Sun">Golden Hour 3200K Low Sun (Warm Edge Rim)</option>
+              <option value="Moody Low-Key Chiaroscuro">Moody Low-Key Chiaroscuro (Deep Shadows)</option>
+              <option value="Neon Practical Rim Lighting">Neon Practical Rim Lighting (Cool Cyan & Magenta)</option>
+              <option value="Warm Tungsten Interior">Warm Tungsten Interior 2800K (Candlelight Ambient)</option>
+            </select>
+          </div>
+
+          {/* Prompt Concept Textarea */}
+          <div>
+            <label style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', display: 'block', marginBottom: '0.3rem' }}>
+              {type === 'scene'
+                ? 'Scene or shot concept in plain words:'
+                : type === 'character'
+                ? 'Character persona or background concept:'
+                : 'Movie premise, logline, or plot arc:'}
             </label>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
-                type === 'character'
-                  ? 'e.g. Japanese intelligence agent operating in Shanghai, sharp eyes, tailored dark trench coat, rain-slicked hair.'
-                  : type === 'movie'
-                  ? 'e.g. An agent receives an encrypted beacon in Tokyo, flees an ambush on a neon highway, and meets her handler in a hidden tea house.'
-                  : 'e.g. Japanese agent sitting in a dimly lit Shanghai tea house reviewing holographic dossier data, moody window light.'
+                type === 'scene'
+                  ? 'e.g. japanese agent roaming in china and doing her work with lot of dedication'
+                  : type === 'character'
+                  ? 'e.g. A weary cybernetic detective in neo-tokyo with trench coat and scanner eye'
+                  : 'e.g. A 4-shot mini movie about a mysterious courier delivering an ancient relic across Tokyo at midnight'
               }
               rows={4}
               style={{
@@ -431,16 +714,18 @@ export default function PromptBuilderDrawer({
 
           {/* Animated Progress Box during generation */}
           {loading && (
-            <div style={{
-              padding: '0.85rem 1rem',
-              background: 'linear-gradient(135deg, rgba(232,185,74,0.08), rgba(18,31,53,0.9))',
-              border: '1px solid rgba(232,185,74,0.4)',
-              borderRadius: '0.6rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.5rem',
-              boxShadow: '0 0 25px rgba(232,185,74,0.15)',
-            }}>
+            <div
+              style={{
+                padding: '0.85rem 1rem',
+                background: 'linear-gradient(135deg, rgba(232,185,74,0.08), rgba(18,31,53,0.9))',
+                border: '1px solid rgba(232,185,74,0.4)',
+                borderRadius: '0.6rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem',
+                boxShadow: '0 0 25px rgba(232,185,74,0.15)',
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold, #E8B94A)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <span style={{ display: 'inline-block', animation: 'spin 1.5s linear infinite' }}>✨</span>
@@ -455,7 +740,7 @@ export default function PromptBuilderDrawer({
               <div style={{ fontSize: '11px', color: '#F2F5FA', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--gold, #E8B94A)', display: 'inline-block', boxShadow: '0 0 8px var(--gold)' }} />
                 {elapsedSec < 2.0
-                  ? 'Analyzing scene concept & narrative context...'
+                  ? 'Analyzing concept & narrative context...'
                   : elapsedSec < 4.5
                   ? 'Selecting 35mm optical prime lens & choreographing camera moves...'
                   : elapsedSec < 7.0
@@ -465,14 +750,16 @@ export default function PromptBuilderDrawer({
 
               {/* Shimmer progress bar */}
               <div style={{ width: '100%', height: '4px', background: '#070c14', borderRadius: '2px', overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%',
-                  width: `${Math.min(95, elapsedSec * 15)}%`,
-                  background: 'linear-gradient(90deg, #E8B94A, #F5D77F)',
-                  borderRadius: '2px',
-                  transition: 'width 0.2s ease',
-                  boxShadow: '0 0 10px rgba(232,185,74,0.6)',
-                }} />
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.min(95, elapsedSec * 15)}%`,
+                    background: 'linear-gradient(90deg, #E8B94A, #F5D77F)',
+                    borderRadius: '2px',
+                    transition: 'width 0.2s ease',
+                    boxShadow: '0 0 10px rgba(232,185,74,0.6)',
+                  }}
+                />
               </div>
             </div>
           )}
@@ -509,6 +796,95 @@ export default function PromptBuilderDrawer({
               '✨ Generate Cinematic Prompt'
             )}
           </button>
+
+          {/* 1-Click Full Movie Live Generation Banner */}
+          {movieGenState !== 'idle' && (
+            <div
+              style={{
+                padding: '1rem',
+                background: 'linear-gradient(135deg, rgba(18,31,53,0.95), rgba(7,12,20,0.98))',
+                border: movieGenState === 'done' ? '1px solid #4ade80' : movieGenState === 'error' ? '1px solid #f87171' : '1px solid var(--gold, #E8B94A)',
+                borderRadius: '0.6rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem',
+                boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: movieGenState === 'done' ? '#4ade80' : movieGenState === 'error' ? '#f87171' : 'var(--gold, #E8B94A)' }}>
+                  {movieGenState === 'done' ? '🎉 Full Movie Rendered & Assembled!' : movieGenState === 'error' ? '⚠️ Movie Generation Error' : '🎬 1-Click Full Movie Engine Active'}
+                </span>
+                <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                  {movieGenProgress.currentShot} / {movieGenProgress.totalShots} Shots
+                </span>
+              </div>
+
+              <p style={{ fontSize: '11px', color: '#F2F5FA', margin: 0 }}>
+                {movieGenProgress.error ? movieGenProgress.error : movieGenProgress.stage}
+              </p>
+
+              {/* Shot Statuses List */}
+              {Object.keys(movieGenProgress.shotStatus).length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '120px', overflowY: 'auto' }}>
+                  {Object.entries(movieGenProgress.shotStatus).map(([id, st]) => (
+                    <div key={id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', background: '#070c14', padding: '0.25rem 0.5rem', borderRadius: '0.3rem' }}>
+                      <span style={{ color: '#94a3b8' }}>Scene {id.slice(-4)}:</span>
+                      <span style={{ color: st.includes('Done') ? '#4ade80' : 'var(--gold, #E8B94A)', fontWeight: 700 }}>{st}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Master Movie Video Player when Done */}
+              {movieGenState === 'done' && movieGenProgress.filmFile && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
+                  <video
+                    src={`/api/videogen/assemble?file=${encodeURIComponent(movieGenProgress.filmFile)}`}
+                    controls
+                    autoPlay
+                    playsInline
+                    style={{ width: '100%', borderRadius: '0.5rem', background: '#000', maxHeight: '200px' }}
+                  />
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <a
+                      href={`/api/videogen/assemble?file=${encodeURIComponent(movieGenProgress.filmFile)}&download=1`}
+                      download
+                      style={{
+                        flex: 1,
+                        textAlign: 'center',
+                        textDecoration: 'none',
+                        background: 'var(--gold, #E8B94A)',
+                        color: '#05080e',
+                        padding: '0.5rem',
+                        borderRadius: '0.4rem',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                      }}
+                    >
+                      ⬇️ Download Master Movie (.mp4)
+                    </a>
+                    <a
+                      href="/movie"
+                      style={{
+                        textAlign: 'center',
+                        textDecoration: 'none',
+                        background: '#0e182e',
+                        border: '1px solid #1a2840',
+                        color: '#cbd5e1',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '0.4rem',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      🎞️ Open Studio Timeline
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Result View */}
           {result && (
@@ -560,12 +936,20 @@ export default function PromptBuilderDrawer({
 
               {/* Usage & Cost Badge */}
               {usage && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.35rem 0.6rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840',
-                  fontSize: '10px', color: '#94a3b8'
-                }}>
-                  <span>⚡ <strong>{usage.model}</strong> · {usage.totalTokens} Tokens ({usage.promptTokens} in / {usage.completionTokens} out)</span>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.35rem 0.6rem',
+                    background: '#0e182e',
+                    borderRadius: '0.4rem',
+                    border: '1px solid #1a2840',
+                    fontSize: '10px',
+                    color: '#94a3b8',
+                  }}
+                >
+                  <span>⚡ <strong>{usage.model}</strong> · {usage.totalTokens} Tokens</span>
                   <span style={{ color: 'var(--gold, #E8B94A)', fontWeight: 700 }}>Est: ${usage.costUsd.toFixed(5)}</span>
                 </div>
               )}
@@ -665,7 +1049,7 @@ export default function PromptBuilderDrawer({
                 </>
               )}
 
-              {/* Movie Storyboard View */}
+              {/* Movie Storyboard View with Edit / Regenerate per Shot & 1-Click Generate */}
               {type === 'movie' && result.shots && (
                 <>
                   <div>
@@ -674,22 +1058,169 @@ export default function PromptBuilderDrawer({
                     </h4>
                     {result.logline && <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '0.15rem 0 0.5rem' }}>{result.logline}</p>}
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
-                      {result.shots.map((shot) => (
-                        <div key={shot.order} style={{ padding: '0.5rem 0.6rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: 'var(--gold, #E8B94A)' }}>
-                              Shot #{shot.order}: {shot.title} ({shot.seconds}s)
-                            </span>
-                            <span style={{ fontSize: '9px', color: '#64748b' }}>{shot.camera}</span>
+                    {/* 1-Click Full Movie Master Button */}
+                    <div style={{ margin: '0.5rem 0 0.85rem' }}>
+                      <button
+                        onClick={handleGenerateFullMovie}
+                        disabled={movieGenState !== 'idle' && movieGenState !== 'done' && movieGenState !== 'error'}
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem',
+                          background: 'linear-gradient(135deg, #E8B94A, #f59e0b)',
+                          color: '#05080e',
+                          border: 'none',
+                          borderRadius: '0.5rem',
+                          fontWeight: 900,
+                          fontSize: '12px',
+                          cursor: movieGenState === 'rendering' || movieGenState === 'assembling' ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.5rem',
+                          boxShadow: '0 4px 15px rgba(232,185,74,0.35)',
+                        }}
+                      >
+                        <span>🎬</span>
+                        <span>1-Click Generate Full Movie (All Shots + Auto-Stitch)</span>
+                      </button>
+                    </div>
+
+                    {/* Shot List with Edit & Regenerate controls */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.4rem' }}>
+                      {result.shots.map((shot, idx) => {
+                        const isEditing = editingShotIdx === idx
+                        const isRegen = regeneratingShotIdx === idx
+
+                        return (
+                          <div
+                            key={shot.order || idx}
+                            style={{
+                              padding: '0.75rem',
+                              background: '#0e182e',
+                              borderRadius: '0.5rem',
+                              border: isEditing ? '1px solid var(--gold, #E8B94A)' : '1px solid #1a2840',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.4rem',
+                            }}
+                          >
+                            {/* Shot Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold, #E8B94A)' }}>
+                                Shot #{shot.order}: {shot.title} ({shot.seconds}s)
+                              </span>
+                              <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>{shot.camera}</span>
+                            </div>
+
+                            {/* Inline Editing Mode */}
+                            {isEditing && editDraft ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.3rem' }}>
+                                <input
+                                  type="text"
+                                  value={editDraft.title}
+                                  onChange={(e) => setEditDraft({ ...editDraft, title: e.target.value })}
+                                  placeholder="Shot Title"
+                                  style={{ padding: '0.4rem', borderRadius: '0.3rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '11px' }}
+                                />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: '0.4rem' }}>
+                                  <input
+                                    type="text"
+                                    value={editDraft.camera}
+                                    onChange={(e) => setEditDraft({ ...editDraft, camera: e.target.value })}
+                                    placeholder="Camera move / lens"
+                                    style={{ padding: '0.4rem', borderRadius: '0.3rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '11px' }}
+                                  />
+                                  <input
+                                    type="number"
+                                    value={editDraft.seconds}
+                                    onChange={(e) => setEditDraft({ ...editDraft, seconds: Number(e.target.value) })}
+                                    placeholder="Sec"
+                                    style={{ padding: '0.4rem', borderRadius: '0.3rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '11px' }}
+                                  />
+                                </div>
+                                <textarea
+                                  value={editDraft.prompt}
+                                  onChange={(e) => setEditDraft({ ...editDraft, prompt: e.target.value })}
+                                  rows={4}
+                                  style={{ padding: '0.4rem', borderRadius: '0.3rem', background: '#070c14', border: '1px solid #1a2840', color: '#fff', fontSize: '11px', resize: 'vertical' }}
+                                />
+                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                  <button
+                                    onClick={() => handleSaveEditShot(idx)}
+                                    style={{ background: 'var(--gold, #E8B94A)', color: '#05080e', border: 'none', borderRadius: '0.3rem', padding: '0.35rem 0.65rem', fontSize: '10.5px', fontWeight: 800, cursor: 'pointer' }}
+                                  >
+                                    💾 Save Shot
+                                  </button>
+                                  <button
+                                    onClick={handleCancelEditShot}
+                                    style={{ background: '#070c14', border: '1px solid #1a2840', color: '#94a3b8', borderRadius: '0.3rem', padding: '0.35rem 0.65rem', fontSize: '10.5px', cursor: 'pointer' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <p style={{ fontSize: '10.5px', color: '#cbd5e1', margin: 0, lineHeight: 1.45 }}>
+                                  {shot.prompt}
+                                </p>
+
+                                {/* Per-Shot Actions Toolbar */}
+                                <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+                                  <button
+                                    onClick={() => handleStartEditShot(idx)}
+                                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid #1a2840', color: '#cbd5e1', borderRadius: '0.3rem', padding: '0.2rem 0.5rem', fontSize: '9.5px', fontWeight: 700, cursor: 'pointer' }}
+                                  >
+                                    ✏️ Edit
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleRegenerateSingleShot(idx)}
+                                    disabled={isRegen}
+                                    style={{ background: 'rgba(232,185,74,0.1)', border: '1px solid rgba(232,185,74,0.3)', color: 'var(--gold, #E8B94A)', borderRadius: '0.3rem', padding: '0.2rem 0.5rem', fontSize: '9.5px', fontWeight: 700, cursor: isRegen ? 'not-allowed' : 'pointer' }}
+                                  >
+                                    {isRegen ? '⏳ Re-crafting...' : '🔄 Regenerate Shot'}
+                                  </button>
+
+                                  <button
+                                    onClick={() => copyText(shot.prompt)}
+                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid #1a2840', color: '#94a3b8', borderRadius: '0.3rem', padding: '0.2rem 0.45rem', fontSize: '9.5px', cursor: 'pointer' }}
+                                  >
+                                    📋 Copy
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteShot(idx)}
+                                    style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171', borderRadius: '0.3rem', padding: '0.2rem 0.45rem', fontSize: '9.5px', cursor: 'pointer', marginLeft: 'auto' }}
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </div>
-                          <p style={{ fontSize: '10.5px', color: '#cbd5e1', margin: '0.25rem 0 0', lineHeight: 1.4 }}>
-                            {shot.prompt}
-                          </p>
-                        </div>
-                      ))}
+                        )
+                      })}
+
+                      {/* Add Shot Button */}
+                      <button
+                        onClick={handleAddShot}
+                        style={{
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px dashed #1a2840',
+                          color: '#94a3b8',
+                          borderRadius: '0.4rem',
+                          padding: '0.5rem',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ➕ Add Another Shot to Storyboard
+                      </button>
                     </div>
                   </div>
+
                   {onApplyMovie && (
                     <button
                       onClick={() => {
@@ -699,17 +1230,18 @@ export default function PromptBuilderDrawer({
                         })
                       }}
                       style={{
-                        background: 'var(--gold, #E8B94A)',
-                        color: '#05080e',
-                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--gold, #E8B94A)',
+                        border: '1px solid rgba(232,185,74,0.4)',
                         borderRadius: '0.4rem',
                         padding: '0.5rem',
                         fontWeight: 800,
                         fontSize: '11px',
                         cursor: 'pointer',
+                        marginTop: '0.5rem',
                       }}
                     >
-                      ⚡ Load Storyboard into Movie Studio
+                      ⚡ Load Storyboard into Movie Studio Timeline
                     </button>
                   )}
                 </>

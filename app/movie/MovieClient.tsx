@@ -92,6 +92,7 @@ export default function MovieClient() {
   const [activeProjectId, setActiveProjectId] = useState<string>('default-project')
   const [projects, setProjects] = useState<Project[]>([])
   const [showPromptBuilder, setShowPromptBuilder] = useState(false)
+  const [promptBuilderIsWide, setPromptBuilderIsWide] = useState(false)
   const [promptBuilderType, setPromptBuilderType] = useState<'scene' | 'character' | 'movie'>('scene')
   const [resolution, setResolution] = useState(DEFAULT_RESOLUTION)
   const [audioMode, setAudioMode] = useState('native')
@@ -377,8 +378,14 @@ export default function MovieClient() {
         </p>
       )}
 
-      {/* Main Studio Grid */}
-      <div className="ms-grid">
+      {/* Main Studio Grid (Dynamically shifts to prevent overlap when right AI Prompt Director opens) */}
+      <div
+        className="ms-grid"
+        style={{
+          marginRight: showPromptBuilder ? (promptBuilderIsWide ? 'min(620px, 92vw)' : 'min(440px, 92vw)') : 0,
+          transition: 'margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
         
         {/* Left/Middle Column: Active Shot Editor & Timeline */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -695,6 +702,7 @@ export default function MovieClient() {
       <PromptBuilderDrawer
         isOpen={showPromptBuilder}
         onToggle={() => setShowPromptBuilder(!showPromptBuilder)}
+        onWideToggle={setPromptBuilderIsWide}
         initialType={promptBuilderType}
         onApplyScene={(data) => {
           if (active) {
