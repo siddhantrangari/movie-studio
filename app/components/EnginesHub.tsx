@@ -56,6 +56,14 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
   const [newVolSize, setNewVolSize] = useState(200)
   const [newVolDc, setNewVolDc] = useState('EU-RO-1')
   const [autoShutdownMinutes, setAutoShutdownMinutes] = useState<number>(5)
+  const [deployingModel, setDeployingModel] = useState<'minimax' | 'ltx25' | null>(null)
+  const logContainerRef = React.useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
+    }
+  }, [actionLogs])
 
   const handleUpdateAutoShutdown = async (mins: number) => {
     try {
@@ -182,6 +190,7 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
   ) => {
     setIsPerformingAction(true)
     setActiveAction(action)
+    setDeployingModel(opts.model || (action === 'up' ? 'ltx25' : null))
     setActionLogs([{ level: 'info', text: `Initiating ${action.toUpperCase()} operation on ${opts.model?.toUpperCase() || 'GPU'} fleet...` }])
 
     try {
@@ -227,6 +236,7 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
     } finally {
       setIsPerformingAction(false)
       setActiveAction(null)
+      setDeployingModel(null)
       fetchHubData()
     }
   }
@@ -367,18 +377,40 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
                 disabled={isPerformingAction || minimaxRunning}
                 style={{
                   flex: 1,
-                  background: minimaxRunning ? '#1e293b' : 'linear-gradient(135deg, #a855f7, #7c3aed)',
+                  background: isPerformingAction && deployingModel === 'minimax'
+                    ? 'linear-gradient(90deg, #7c3aed, #c084fc, #7c3aed)'
+                    : minimaxRunning
+                    ? '#1e293b'
+                    : 'linear-gradient(135deg, #a855f7, #7c3aed)',
                   color: minimaxRunning ? '#94a3b8' : '#fff',
-                  border: 'none',
+                  border: isPerformingAction && deployingModel === 'minimax' ? '1px solid #c084fc' : 'none',
                   borderRadius: '0.4rem',
-                  padding: '0.6rem',
+                  padding: '0.65rem',
                   fontSize: '11.5px',
                   fontWeight: 800,
                   cursor: isPerformingAction || minimaxRunning ? 'not-allowed' : 'pointer',
-                  boxShadow: minimaxRunning ? 'none' : '0 4px 14px rgba(168, 85, 247, 0.35)',
+                  boxShadow: isPerformingAction && deployingModel === 'minimax'
+                    ? '0 0 20px rgba(192, 132, 252, 0.6)'
+                    : minimaxRunning
+                    ? 'none'
+                    : '0 4px 14px rgba(168, 85, 247, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.2s ease',
                 }}
               >
-                {minimaxRunning ? '✓ MiniMax Engine Active' : '🚀 Deploy MiniMax Hailuo 3'}
+                {isPerformingAction && deployingModel === 'minimax' ? (
+                  <>
+                    <span style={{ display: 'inline-block' }}>⏳</span>
+                    <span>Deploying MiniMax Node (~30s)...</span>
+                  </>
+                ) : minimaxRunning ? (
+                  '✓ MiniMax Engine Active'
+                ) : (
+                  '🚀 Deploy MiniMax Hailuo 3'
+                )}
               </button>
             </div>
           </div>
@@ -386,14 +418,19 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
           {/* LTX-Video 2.5 Card */}
           <div style={{
             background: '#0a101d',
-            border: `1px solid ${ltxRunning ? '#34d399' : '#1a2840'}`,
+            border: `1px solid ${isPerformingAction && deployingModel === 'ltx25' ? '#34d399' : ltxRunning ? '#34d399' : '#1a2840'}`,
             borderRadius: '0.75rem',
             padding: '1.35rem',
             display: 'flex',
             flexDirection: 'column',
             gap: '1rem',
             position: 'relative',
-            boxShadow: ltxRunning ? '0 0 20px rgba(52, 211, 153, 0.15)' : 'none',
+            boxShadow: isPerformingAction && deployingModel === 'ltx25'
+              ? '0 0 25px rgba(52, 211, 153, 0.3)'
+              : ltxRunning
+              ? '0 0 20px rgba(52, 211, 153, 0.15)'
+              : 'none',
+            transition: 'all 0.3s ease',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
@@ -460,22 +497,148 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
                 disabled={isPerformingAction || ltxRunning}
                 style={{
                   flex: 1,
-                  background: ltxRunning ? '#1e293b' : 'linear-gradient(135deg, #10b981, #059669)',
+                  background: isPerformingAction && deployingModel === 'ltx25'
+                    ? 'linear-gradient(90deg, #059669, #34d399, #059669)'
+                    : ltxRunning
+                    ? '#1e293b'
+                    : 'linear-gradient(135deg, #10b981, #059669)',
                   color: ltxRunning ? '#94a3b8' : '#fff',
-                  border: 'none',
+                  border: isPerformingAction && deployingModel === 'ltx25' ? '1px solid #34d399' : 'none',
                   borderRadius: '0.4rem',
-                  padding: '0.6rem',
+                  padding: '0.65rem',
                   fontSize: '11.5px',
                   fontWeight: 800,
                   cursor: isPerformingAction || ltxRunning ? 'not-allowed' : 'pointer',
-                  boxShadow: ltxRunning ? 'none' : '0 4px 14px rgba(16, 185, 129, 0.3)',
+                  boxShadow: isPerformingAction && deployingModel === 'ltx25'
+                    ? '0 0 20px rgba(52, 211, 153, 0.6)'
+                    : ltxRunning
+                    ? 'none'
+                    : '0 4px 14px rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.2s ease',
                 }}
               >
-                {ltxRunning ? '✓ LTX Engine Active' : '🚀 Deploy LTX-Video 2.5'}
+                {isPerformingAction && deployingModel === 'ltx25' ? (
+                  <>
+                    <span style={{ display: 'inline-block' }}>⏳</span>
+                    <span>Deploying LTX Node (~30s)...</span>
+                  </>
+                ) : ltxRunning ? (
+                  '✓ LTX Engine Active'
+                ) : (
+                  '🚀 Deploy LTX-Video 2.5'
+                )}
               </button>
             </div>
           </div>
         </div>
+
+        {/* Immediate In-View Live Deployment Terminal */}
+        {(isPerformingAction || actionLogs.length > 0) && (
+          <div style={{
+            marginTop: '1.25rem',
+            background: 'linear-gradient(135deg, #070c14 0%, #0c1524 100%)',
+            border: '1px solid #2563eb',
+            borderRadius: '0.75rem',
+            padding: '1.15rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.65rem',
+            boxShadow: '0 0 25px rgba(37, 99, 235, 0.25)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '1.3rem' }}>
+                  {isPerformingAction ? '⚙️' : '📡'}
+                </span>
+                <div>
+                  <strong style={{ color: '#F2F5FA', fontSize: '13px' }}>
+                    {isPerformingAction
+                      ? `Deploying ${deployingModel === 'minimax' ? 'MiniMax Hailuo 3 (48GB A6000)' : 'LTX-Video 2.5'} Compute Node`
+                      : 'Live Cloud Provisioning & Execution Log'}
+                  </strong>
+                  <div style={{ fontSize: '10.5px', color: isPerformingAction ? '#60a5fa' : '#94a3b8' }}>
+                    {isPerformingAction ? 'Mounting 200GB Network Volume & Launching ComfyUI Server...' : 'Completed operation log'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '0.35rem',
+                  background: isPerformingAction ? 'rgba(59, 130, 246, 0.2)' : 'rgba(74, 222, 128, 0.2)',
+                  color: isPerformingAction ? '#60a5fa' : '#4ade80',
+                  border: `1px solid ${isPerformingAction ? '#2563eb' : '#16a34a'}`,
+                }}>
+                  {isPerformingAction ? '● IN PROGRESS' : '✓ READY'}
+                </span>
+                {!isPerformingAction && (
+                  <button
+                    onClick={() => setActionLogs([])}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid #334155',
+                      color: '#94a3b8',
+                      borderRadius: '0.3rem',
+                      padding: '0.2rem 0.5rem',
+                      fontSize: '10px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Live Terminal */}
+            <div
+              ref={logContainerRef}
+              style={{
+                background: '#010409',
+                border: '1px solid #1a2840',
+                borderRadius: '0.5rem',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.35rem',
+                maxHeight: '180px',
+                overflowY: 'auto',
+                fontFamily: 'ui-monospace, monospace',
+                fontSize: '11px',
+                scrollBehavior: 'smooth',
+              }}
+            >
+              {actionLogs.map((log, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    color:
+                      log.level === 'error'
+                        ? '#f87171'
+                        : log.level === 'warn'
+                        ? '#fbbf24'
+                        : log.level === 'ok' || log.level === 'done'
+                        ? '#4ade80'
+                        : '#94a3b8',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <span style={{ opacity: 0.5, userSelect: 'none' }}>›</span>
+                  <span>{log.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Network Volume & Persistent Storage Management Section */}
@@ -998,45 +1161,6 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
           </div>
         )}
 
-        {/* Live Action Stream Terminal if active */}
-        {actionLogs.length > 0 && (
-          <div
-            style={{
-              background: '#05080e',
-              border: '1px solid #1a2840',
-              borderRadius: '0.5rem',
-              padding: '0.85rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.3rem',
-              maxHeight: '160px',
-              overflowY: 'auto',
-              fontFamily: 'monospace',
-              fontSize: '11px',
-            }}
-          >
-            <div style={{ color: 'var(--gold)', fontWeight: 700, marginBottom: '0.2rem' }}>
-              📡 Live Cloud Execution Stream:
-            </div>
-            {actionLogs.map((log, idx) => (
-              <div
-                key={idx}
-                style={{
-                  color:
-                    log.level === 'error'
-                      ? '#f87171'
-                      : log.level === 'warn'
-                      ? '#fbbf24'
-                      : log.level === 'ok' || log.level === 'done'
-                      ? '#4ade80'
-                      : '#94a3b8',
-                }}
-              >
-                {log.text}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
