@@ -727,28 +727,36 @@ export default function VideoGenClient() {
           {/* Action Tools & Pod State Banner */}
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             {/* Top Header Live GPU Indicator */}
-            <button onClick={() => setShowPodDrawer(!showPodDrawer)} style={{
-              display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '11px', fontWeight: 800,
-              padding: '0.42rem 0.85rem', borderRadius: '0.5rem',
-              border: `1px solid ${ltxRunning ? 'rgba(74,222,128,0.4)' : 'rgba(232,185,74,0.35)'}`,
-              background: ltxRunning ? 'rgba(74,222,128,0.1)' : '#070c14',
-              color: ltxRunning ? '#4ade80' : 'var(--gold)', cursor: 'pointer',
-              boxShadow: ltxRunning ? '0 0 12px rgba(74,222,128,0.15)' : 'none',
-              transition: 'all 0.2s ease',
-            }}
-            title="Click to manage GPU Compute Nodes"
-            >
-              <span style={{ fontSize: '9px', color: ltxRunning ? '#4ade80' : '#64748b' }}>
-                {ltxRunning ? '●' : '⚡'}
-              </span>
-              {ltxRunning && pods.ltx ? (
-                <span>
-                  {getPodGpuName(pods.ltx)} ({getPodVram(pods.ltx)}GB · ${Number(pods.ltx.costPerHr || 0.54).toFixed(2)}/hr)
-                </span>
-              ) : (
-                <span>GPU Pods: Inactive (Launch Node)</span>
-              )}
-            </button>
+            {(() => {
+              const anyRunning = ltxRunning || minimaxRunning
+              let label = 'GPU Pods: Inactive (Launch Node)'
+              if (ltxRunning && minimaxRunning) {
+                label = `● 2 Nodes Active: LTX & MiniMax ($${(Number(pods.ltx?.costPerHr || 0.54) + Number(pods.minimax?.costPerHr || 0.54)).toFixed(2)}/hr)`
+              } else if (ltxRunning && pods.ltx) {
+                label = `● LTX 2.5: ${getPodGpuName(pods.ltx)} (${getPodVram(pods.ltx)}GB · $${Number(pods.ltx.costPerHr || 0.54).toFixed(2)}/hr)`
+              } else if (minimaxRunning && pods.minimax) {
+                label = `● MiniMax H3: ${getPodGpuName(pods.minimax)} (${getPodVram(pods.minimax)}GB · $${Number(pods.minimax.costPerHr || 0.54).toFixed(2)}/hr)`
+              }
+
+              return (
+                <button onClick={() => setShowPodDrawer(!showPodDrawer)} style={{
+                  display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '11px', fontWeight: 800,
+                  padding: '0.42rem 0.85rem', borderRadius: '0.5rem',
+                  border: `1px solid ${anyRunning ? 'rgba(74,222,128,0.4)' : 'rgba(232,185,74,0.35)'}`,
+                  background: anyRunning ? 'rgba(74,222,128,0.1)' : '#070c14',
+                  color: anyRunning ? '#4ade80' : 'var(--gold)', cursor: 'pointer',
+                  boxShadow: anyRunning ? '0 0 12px rgba(74,222,128,0.15)' : 'none',
+                  transition: 'all 0.2s ease',
+                }}
+                title="Click to manage GPU Compute Nodes"
+                >
+                  <span style={{ fontSize: '9px', color: anyRunning ? '#4ade80' : '#64748b' }}>
+                    {anyRunning ? '●' : '⚡'}
+                  </span>
+                  <span>{label}</span>
+                </button>
+              )
+            })()}
 
             <Link href="/movie" style={{
               fontSize: '11px', textDecoration: 'none', fontWeight: 700, color: 'var(--gold)',
@@ -804,6 +812,31 @@ export default function VideoGenClient() {
                 marginBottom: '2.5rem'
               }}>
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  {/* AI Engine Model Selector */}
+                  <div style={{
+                    flex: 1.15, minWidth: '135px', background: '#070c14',
+                    border: `1px solid ${selectedModel === 'minimax' ? 'rgba(232,185,74,0.45)' : 'rgba(59,130,246,0.45)'}`,
+                    borderRadius: '0.5rem', padding: '0.5rem 0.75rem', display: 'flex',
+                    alignItems: 'center', gap: '0.5rem', justifyContent: 'space-between',
+                    boxShadow: selectedModel === 'minimax' ? '0 0 10px rgba(232,185,74,0.1)' : '0 0 10px rgba(59,130,246,0.1)'
+                  }}>
+                    <div style={{ width: '100%' }}>
+                      <p style={{ fontSize: '9px', color: selectedModel === 'minimax' ? 'var(--gold)' : '#93c5fd', textTransform: 'uppercase', margin: 0, fontWeight: 800 }}>
+                        {selectedModel === 'minimax' ? '🌟 AI Model' : '⚡ AI Model'}
+                      </p>
+                      <select
+                        value={selectedModel}
+                        onChange={e => setSelectedModel(e.target.value as 'ltx25' | 'minimax')}
+                        style={{
+                          background: 'none', border: 'none', color: '#F2F5FA', fontSize: '11px', fontWeight: 700, outline: 'none', padding: 0, width: '100%', cursor: 'pointer'
+                        }}
+                      >
+                        <option value="ltx25" style={{ background: '#070c14' }}>LTX-Video 2.5</option>
+                        <option value="minimax" style={{ background: '#070c14' }}>MiniMax Hailuo 3</option>
+                      </select>
+                    </div>
+                  </div>
+
                   {/* References Selector */}
                   <div onClick={() => setShowCharModal(true)} style={{
                     flex: 1, minWidth: '110px', background: '#070c14', border: '1px solid #1a2840',
