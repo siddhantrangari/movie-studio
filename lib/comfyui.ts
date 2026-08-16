@@ -78,9 +78,9 @@ export function buildMiniMaxWorkflow(p: GenParams) {
   const negative = p.negativePrompt || DEFAULT_NEGATIVE
 
   const wf: Record<string, unknown> = {
-    '1': { class_type: 'UNETLoader', inputs: { unet_name: 'minimax-h3-int8.safetensors', weight_dtype: 'default' } },
-    '2': { class_type: 'CLIPLoader', inputs: { clip_name: 't5xxl_fp8_e4m3fn.safetensors', type: 'minimax' } },
-    '3': { class_type: 'VAELoader', inputs: { vae_name: 'vae.safetensors' } },
+    '1': { class_type: 'UNETLoader', inputs: { unet_name: 'minimax_h3_fl2va_int8_convrot.safetensors', weight_dtype: 'default' } },
+    '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_32b_minimax_h3_int8_convrot.safetensors', type: 'minimax' } },
+    '3': { class_type: 'VAELoader', inputs: { vae_name: 'minimax_h3_video_vae_fp16.safetensors' } },
     '4': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: p.prompt } },
     '5': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: negative } },
     '6': { class_type: 'EmptyLatentVideo', inputs: { width, height, length: frames, batch_size: 1 } },

@@ -17,7 +17,7 @@
 set -euo pipefail
 
 COMFY_VERSION="v0.33.1"
-REPO="MiniMax/Hailuo-03"
+REPO="Comfy-Org/MiniMax-H3"
 BAKED="/opt/comfyui-baked"
 PHASE="${PROVISION_PHASE:-all}"
 
@@ -74,7 +74,7 @@ check_gpu() {
 probe_speed() {
     local url bytes mbps i
     [ "${PROBE_SPEED:-0}" = "1" ] || return 0
-    url="https://huggingface.co/${REPO}/resolve/main/vae/vae.safetensors"
+    url="https://huggingface.co/${REPO}/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors"
     log "Measuring this host's download speed"
     rm -f /tmp/probe.* 2>/dev/null || true
     for i in $(seq 0 7); do
@@ -175,17 +175,20 @@ do_models() {
 
     log "Checking MiniMax Hailuo 3 weights"
     # MiniMax Hailuo 3 INT8 transformer & components
-    fetch "https://huggingface.co/Kijai/MiniMax-Hailuo-03-ComfyUI/resolve/main/minimax-h3-int8.safetensors" \
-          "$models/diffusion_models" "minimax-h3-int8.safetensors"
+    fetch "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors" \
+          "$models/diffusion_models" "minimax_h3_fl2va_int8_convrot.safetensors"
 
-    fetch "https://huggingface.co/Comfy-Org/MiniMax_Hailuo_03_repackaged/resolve/main/split_files/text_encoders/t5xxl_fp8_e4m3fn.safetensors" \
-          "$models/text_encoders" "t5xxl_fp8_e4m3fn.safetensors"
+    fetch "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors" \
+          "$models/text_encoders" "qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
 
-    fetch "https://huggingface.co/Comfy-Org/MiniMax_Hailuo_03_repackaged/resolve/main/split_files/vae/vae.safetensors" \
-          "$models/vae" "vae.safetensors"
+    fetch "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors" \
+          "$models/vae" "minimax_h3_video_vae_fp16.safetensors"
 
-    ln -sfn ../diffusion_models/minimax-h3-int8.safetensors "$models/checkpoints/minimax-h3-int8.safetensors"
-    ln -sfn ../text_encoders/t5xxl_fp8_e4m3fn.safetensors "$models/clip/t5xxl_fp8_e4m3fn.safetensors"
+    ln -sfn ../diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors "$models/checkpoints/minimax_h3_fl2va_int8_convrot.safetensors"
+    ln -sfn ../diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors "$models/diffusion_models/minimax-h3-int8.safetensors"
+    ln -sfn ../text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors "$models/clip/qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
+    ln -sfn ../text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors "$models/clip/t5xxl_fp8_e4m3fn.safetensors"
+    ln -sfn ../vae/minimax_h3_video_vae_fp16.safetensors "$models/vae/vae.safetensors"
     ok "MiniMax Hailuo 3 models in place"
 }
 
