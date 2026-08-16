@@ -148,6 +148,7 @@ export default function VideoGenClient() {
   const [deployingTier, setDeployingTier] = useState<'standard' | 'ultra_4k' | null>(null)
   const [deployError, setDeployError] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
   const [actionLoading, setActionLoading] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
+  const [fleetModalTab, setFleetModalTab] = useState<'ltx25' | 'minimax'>('ltx25')
 
   // Active Tab navigation: 'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'
   const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'>('home')
@@ -1589,6 +1590,37 @@ export default function VideoGenClient() {
               <button onClick={() => { setShowPodDrawer(false); setPromptDeployConflict(null); }} style={{ background: 'none', border: 'none', color: '#96A3B6', fontSize: '16px', cursor: 'pointer' }}>×</button>
             </div>
 
+            {/* Engine Tabs: Clear Separation for LTX 2.5 & MiniMax H3 */}
+            <div style={{ display: 'flex', gap: '0.5rem', background: '#070c14', padding: '0.3rem', borderRadius: '0.5rem', border: '1px solid #1a2840' }}>
+              <button
+                onClick={() => setFleetModalTab('ltx25')}
+                style={{
+                  flex: 1, padding: '0.5rem', borderRadius: '0.4rem',
+                  background: fleetModalTab === 'ltx25' ? 'linear-gradient(135deg, #1e3a8a, #0e182e)' : 'transparent',
+                  color: fleetModalTab === 'ltx25' ? '#93c5fd' : '#94a3b8',
+                  border: fleetModalTab === 'ltx25' ? '1px solid #3b82f6' : '1px solid transparent',
+                  fontWeight: 800, fontSize: '11.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
+                }}
+              >
+                <span>⚡ LTX-Video 2.5</span>
+                {ltxRunning && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80' }} />}
+              </button>
+
+              <button
+                onClick={() => setFleetModalTab('minimax')}
+                style={{
+                  flex: 1, padding: '0.5rem', borderRadius: '0.4rem',
+                  background: fleetModalTab === 'minimax' ? 'linear-gradient(135deg, #E8B94A, #d97706)' : 'transparent',
+                  color: fleetModalTab === 'minimax' ? '#05080e' : '#94a3b8',
+                  border: fleetModalTab === 'minimax' ? '1px solid var(--gold)' : '1px solid transparent',
+                  fontWeight: 800, fontSize: '11.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
+                }}
+              >
+                <span>🌟 MiniMax Hailuo 3 (48GB+)</span>
+                {minimaxRunning && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80' }} />}
+              </button>
+            </div>
+
             {/* In-UI Conflict Resolution Dialog */}
             {promptDeployConflict ? (
               <div style={{ background: '#121F35', border: '1px solid var(--gold)', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -1642,18 +1674,18 @@ export default function VideoGenClient() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : fleetModalTab === 'ltx25' ? (
               <>
-                {/* Active Pod Status Banner */}
+                {/* Active LTX Pod Status Banner */}
                 {ltxRunning && (
                   <div style={{ background: '#070c14', border: '1px solid rgba(74,222,128,0.4)', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                          ● ACTIVE COMPUTE NODE (RUNNING)
+                          ● ACTIVE LTX COMPUTE NODE (RUNNING)
                         </span>
                         <h4 style={{ margin: '0.2rem 0 0', fontSize: '13px', fontWeight: 800, color: '#F2F5FA' }}>
-                          {getPodGpuName(pods.ltx) || 'NVIDIA RTX A6000'} ({getPodVram(pods.ltx)}GB VRAM)
+                          {getPodGpuName(pods.ltx) || 'NVIDIA GPU'} ({getPodVram(pods.ltx)}GB VRAM)
                         </h4>
                       </div>
                       <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold)', background: '#0e182e', padding: '0.25rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
@@ -1707,7 +1739,7 @@ export default function VideoGenClient() {
                   </div>
                 )}
 
-                {/* GPU Tier Selection Cards */}
+                {/* LTX GPU Tier Selection Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
                   {/* Card 1: Standard 24GB */}
                   <div style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -1756,6 +1788,103 @@ export default function VideoGenClient() {
                       {deployingTier === 'ultra_4k' ? '⏳ Deploying Ultra 4K (48GB+)...' : '🔥 Deploy Ultra 4K (48GB+)'}
                     </button>
                   </div>
+                </div>
+              </>
+            ) : (
+              /* MiniMax H3 Dedicated Fleet Tab */
+              <>
+                {/* Active MiniMax Pod Status Banner */}
+                {minimaxRunning && (
+                  <div style={{ background: '#070c14', border: '1px solid rgba(232,185,74,0.4)', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: '9.5px', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          ● ACTIVE MINIMAX H3 COMPUTE NODE
+                        </span>
+                        <h4 style={{ margin: '0.2rem 0 0', fontSize: '13px', fontWeight: 800, color: '#F2F5FA' }}>
+                          {getPodGpuName(pods.minimax) || 'NVIDIA GPU'} ({getPodVram(pods.minimax)}GB VRAM)
+                        </h4>
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold)', background: '#0e182e', padding: '0.25rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
+                        ${Number(pods.minimax?.costPerHr || 0.54).toFixed(2)}/hr
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => podAction('minimax', 'stop')}
+                        disabled={!!actionLoading.minimax}
+                        style={{
+                          flex: 1, padding: '0.55rem', border: '1px solid rgba(248,113,113,0.4)', borderRadius: '0.4rem',
+                          background: 'rgba(248,113,113,0.15)', color: '#f87171', fontWeight: 800, fontSize: '11px', cursor: 'pointer'
+                        }}
+                      >
+                        {actionLoading.minimax === 'stop' ? '⏳ Stopping...' : '⏸️ Stop Node'}
+                      </button>
+
+                      <button
+                        onClick={() => podAction('minimax', 'terminate')}
+                        disabled={!!actionLoading.minimax}
+                        style={{
+                          flex: 1, padding: '0.55rem', border: 'none', borderRadius: '0.4rem',
+                          background: '#ef4444', color: '#fff', fontWeight: 800, fontSize: '11px', cursor: 'pointer'
+                        }}
+                      >
+                        {actionLoading.minimax === 'terminate' ? '⏳ Terminating...' : '🛑 Terminate & Stop Billing'}
+                      </button>
+
+                      {pods.minimax?.id && (
+                        <a
+                          href={`https://${pods.minimax.id}-8188.proxy.runpod.net`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            padding: '0.55rem 0.75rem', background: '#0e182e', border: '1px solid #1a2840',
+                            color: '#cbd5e1', textDecoration: 'none', borderRadius: '0.4rem', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center'
+                          }}
+                        >
+                          🌐 ComfyUI
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {deployError.minimax && (
+                  <div style={{ padding: '0.6rem', background: 'rgba(248,113,113,0.1)', border: '1px solid #f87171', borderRadius: '0.4rem', color: '#f87171', fontSize: '11px' }}>
+                    ⚠️ {deployError.minimax}
+                  </div>
+                )}
+
+                {/* MiniMax 48GB+ Deployment Card */}
+                <div style={{ background: '#070c14', border: '1px solid rgba(232,185,74,0.35)', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase' }}>
+                        🌟 MiniMax Hailuo 3 Engine
+                      </span>
+                      <h4 style={{ margin: '0.2rem 0 0', fontSize: '14px', fontWeight: 800, color: '#F2F5FA' }}>
+                        Ultra High-Motion Cinema (48GB+ VRAM)
+                      </h4>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', background: '#0e182e', padding: '0.25rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
+                      From ~$0.33/hr
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: 1.45 }}>
+                    MiniMax H3 uses an INT8 transformer requiring 48GB+ VRAM. It automatically provisions the lowest-cost available 48GB GPU (NVIDIA RTX A6000 / A40 at ~$0.33-$0.54/hr).
+                  </p>
+                  <button
+                    onClick={() => deploy('minimax', 'ultra_4k')}
+                    disabled={deploying.minimax}
+                    style={{
+                      marginTop: '0.5rem', padding: '0.65rem', borderRadius: '0.45rem',
+                      background: 'linear-gradient(135deg, #E8B94A, #d97706)', border: 'none',
+                      color: '#05080e', fontWeight: 900, fontSize: '11.5px', cursor: deploying.minimax ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {deploying.minimax ? '⏳ Deploying MiniMax Node (48GB+)...' : '🚀 Deploy MiniMax H3 Node (48GB+)'}
+                  </button>
                 </div>
               </>
             )}
