@@ -38,19 +38,23 @@ export async function POST(req: NextRequest) {
   const model = process.env.OPENAI_MODEL || 'gpt-4o'
 
   try {
-    const { type, input, genre, cameraStyle, lightingStyle } = await req.json()
+    const { type, input, genre, cameraStyle, lightingStyle, durationSeconds = 10 } = await req.json()
 
     if (!input || typeof input !== 'string' || !input.trim()) {
       return NextResponse.json({ error: 'Prompt input is required' }, { status: 400 })
     }
 
+    const isAutoCamera = !cameraStyle || cameraStyle.includes('Auto')
+    const isAutoLighting = !lightingStyle || lightingStyle.includes('Auto')
+    const isAutoGenre = !genre || genre.includes('Auto')
+
     let userPrompt = ''
     if (type === 'character') {
-      userPrompt = `Generate a complete photorealistic Character Style Sheet & Turnaround Prompt based on this character idea:
+      userPrompt = `Analyze this character concept and autonomously design a complete photorealistic Character Style Sheet & Turnaround Prompt:
 "${input.trim()}"
 
-Genre/Theme: ${genre || 'Cinematic Drama'}
-Lighting Preference: ${lightingStyle || 'Natural 5600K Daylight'}
+Genre/Theme: ${isAutoGenre ? 'Autonomously determine the most compelling cinematic genre for this character' : genre}
+Lighting Preference: ${isAutoLighting ? 'Autonomously design the optimal lighting physics' : lightingStyle}
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -62,12 +66,12 @@ Respond ONLY with valid JSON in this exact structure:
   "voiceRecommendation": "Recommended voice style/tone for ElevenLabs (e.g. 'Deep Raspy Male, Calm Baritone, 35yo')"
 }`
     } else if (type === 'movie') {
-      userPrompt = `Generate a 3 to 5 shot Cinematic Movie Storyboard Sequence based on this logline/story:
+      userPrompt = `Analyze this story concept and autonomously design a 3 to 5 shot Cinematic Movie Storyboard Sequence:
 "${input.trim()}"
 
-Genre: ${genre || 'Cinematic Drama'}
-Camera Preference: ${cameraStyle || 'Dynamic Cinematic'}
-Lighting Preference: ${lightingStyle || 'Natural Daylight'}
+Genre: ${isAutoGenre ? 'Autonomously choose the most fitting cinematic tone' : genre}
+Camera Preference: ${isAutoCamera ? 'Autonomously choose dynamic camera setups per shot' : cameraStyle}
+Lighting Preference: ${isAutoLighting ? 'Autonomously design lighting physics per shot' : lightingStyle}
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -85,18 +89,24 @@ Respond ONLY with valid JSON in this exact structure:
   ]
 }`
     } else {
-      // Default: single scene / shot prompt
-      userPrompt = `Generate an ultra-photorealistic, director-grade LTX 2.5 video prompt for this scene concept:
+      // Default: single scene / shot prompt (with duration & multi-beat dynamic camera choreography)
+      userPrompt = `Analyze this scene concept and autonomously engineer an ultra-photorealistic, director-grade LTX 2.5 video prompt designed for a ${durationSeconds}-second shot:
 "${input.trim()}"
 
-Genre: ${genre || 'Cinematic'}
-Camera Style: ${cameraStyle || 'Dynamic Master'}
-Lighting Style: ${lightingStyle || 'Natural Organic'}
+Target Shot Duration: ${durationSeconds} seconds
+Genre Strategy: ${isAutoGenre ? 'Autonomously determine the ideal cinematic genre & visual tone' : genre}
+Lens & Camera Strategy: ${isAutoCamera ? `Autonomously select the optimal camera rig, prime lens (e.g. 35mm / 65mm / 85mm), aperture, and choreograph a smooth ${durationSeconds}-second camera move progression (e.g., establishing move -> push-in to focus on tension/emotion -> subtle reveal)` : cameraStyle}
+Lighting Physics: ${isAutoLighting ? 'Autonomously engineer the optimal lighting physics, Kelvin temperature, bounce light, and volumetric shadows' : lightingStyle}
+
+PROMPT FORMATTING REQUIREMENTS:
+- Write a rich, seamless cinematic prose prompt (120-180 words) that flows continuously across the ${durationSeconds} seconds.
+- Explicitly integrate the physical camera movement progression, lens optical characteristics (Arri Alexa 65 / Panavision Anamorphic T1.4), lighting temperature, epidermal micro-textures, and frame-one kinetic action.
+- Do NOT include markdown bold asterisks or "Avoid" negative tags in the prompt text.
 
 Respond ONLY with valid JSON in this exact structure:
 {
   "title": "Short descriptive scene title",
-  "prompt": "The complete, highly detailed photorealistic prompt text ready to be sent directly to LTX 2.5 (including physical camera optics, natural lighting physics, skin/material textures, and kinetic motion from frame one)",
+  "prompt": "The complete, highly detailed photorealistic prompt text ready to be sent directly to LTX 2.5",
   "cameraMotion": "Recommended camera motion preset key (e.g. dolly_in, dolly_out, zoom_in, orbit_left, crane, static)",
   "lighting": "Recommended lighting preset key (e.g. Golden Hour, Natural Daylight, Moody Noir, Neon Cyber, Studio Softbox)",
   "colorPalette": "Recommended color grade (e.g. Luxury Warm, Teal Orange, Noir, Natural, Pastel)"

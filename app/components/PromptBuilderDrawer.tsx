@@ -44,9 +44,10 @@ export default function PromptBuilderDrawer({
 }: Props) {
   const [type, setType] = useState<'scene' | 'character' | 'movie'>(initialType)
   const [input, setInput] = useState('')
-  const [genre, setGenre] = useState('Cinematic Drama')
-  const [cameraStyle, setCameraStyle] = useState('Dynamic Push In (35mm Prime)')
-  const [lightingStyle, setLightingStyle] = useState('Natural 5600K Diffuse Daylight')
+  const [genre, setGenre] = useState('⚡ Auto / Director\'s Choice (AI Decides)')
+  const [cameraStyle, setCameraStyle] = useState('⚡ Auto / Dynamic Camera Progression (AI Decides)')
+  const [lightingStyle, setLightingStyle] = useState('⚡ Auto / Cinematic Lighting Physics (AI Decides)')
+  const [durationSeconds, setDurationSeconds] = useState(10)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PromptBuilderResult | null>(null)
@@ -72,6 +73,7 @@ export default function PromptBuilderDrawer({
           genre,
           cameraStyle,
           lightingStyle,
+          durationSeconds,
         }),
       })
 
@@ -289,6 +291,7 @@ export default function PromptBuilderDrawer({
                 onChange={(e) => setGenre(e.target.value)}
                 style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
               >
+                <option>⚡ Auto / Director&apos;s Choice (AI Decides)</option>
                 <option>Cinematic Drama</option>
                 <option>Sci-Fi Action</option>
                 <option>Wildlife Adventure</option>
@@ -308,6 +311,7 @@ export default function PromptBuilderDrawer({
                 onChange={(e) => setCameraStyle(e.target.value)}
                 style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
               >
+                <option>⚡ Auto / Dynamic Camera Progression (AI Decides)</option>
                 <option>Dynamic Push In (35mm Prime)</option>
                 <option>Handheld Documentary Realism</option>
                 <option>Orbit Macro (85mm Portrait)</option>
@@ -318,22 +322,40 @@ export default function PromptBuilderDrawer({
             </div>
           </div>
 
-          <div>
-            <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
-              Lighting Physics
-            </label>
-            <select
-              value={lightingStyle}
-              onChange={(e) => setLightingStyle(e.target.value)}
-              style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
-            >
-              <option>Natural 5600K Diffuse Daylight</option>
-              <option>Golden Hour Volumetric Backlight</option>
-              <option>Moody Noir Chiaroscuro</option>
-              <option>Warm 2400K Candlelight</option>
-              <option>Cyberpunk Neon Reflections</option>
-              <option>Studio 3-Point Softbox</option>
-            </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '0.6rem' }}>
+            <div>
+              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
+                Lighting Physics
+              </label>
+              <select
+                value={lightingStyle}
+                onChange={(e) => setLightingStyle(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+              >
+                <option>⚡ Auto / Cinematic Lighting Physics (AI Decides)</option>
+                <option>Natural 5600K Diffuse Daylight</option>
+                <option>Golden Hour Volumetric Backlight</option>
+                <option>Moody Noir Chiaroscuro</option>
+                <option>Warm 2400K Candlelight</option>
+                <option>Cyberpunk Neon Reflections</option>
+                <option>Studio 3-Point Softbox</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
+                Shot Duration
+              </label>
+              <select
+                value={durationSeconds}
+                onChange={(e) => setDurationSeconds(Number(e.target.value))}
+                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+              >
+                <option value={10}>10s (Extended Multi-Beat)</option>
+                <option value={6}>6s (Standard Shot)</option>
+                <option value={4}>4s (Fast Cut)</option>
+              </select>
+            </div>
           </div>
 
           {/* User Input Prompt */}
