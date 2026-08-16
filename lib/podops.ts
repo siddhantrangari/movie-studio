@@ -80,8 +80,8 @@ export const STANDARD_GPUS = [
 export const ULTRA_4K_GPUS = [
   'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB VRAM (Cheapest)
   'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB VRAM
-  'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM
-  'NVIDIA L40S',               // ~$0.79/hr — 48GB VRAM
+  'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM (Verified working)
+  'NVIDIA RTX 6000 Ada Generation', // ~$0.75/hr — 48GB VRAM
   'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB VRAM (Fallback)
   'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM (Last resort)
 ]
@@ -90,8 +90,8 @@ export const ULTRA_4K_GPUS = [
 export const MINIMAX_GPUS = [
   'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB VRAM (Cheapest)
   'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB VRAM
-  'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM
-  'NVIDIA L40S',               // ~$0.79/hr — 48GB VRAM
+  'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM (Verified working)
+  'NVIDIA RTX 6000 Ada Generation', // ~$0.75/hr — 48GB VRAM
   'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB VRAM (Fallback)
   'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM (Last resort)
 ]
