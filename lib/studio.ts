@@ -268,6 +268,7 @@ export type GenerationJob = {
   promptId: string
   prompt: string
   label: string
+  startedAt?: number
   createdAt: number
   updatedAt?: number
   state: 'idle' | 'queued' | 'running' | 'done' | 'error'

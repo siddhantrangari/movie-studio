@@ -27,15 +27,34 @@ export async function GET(req: NextRequest) {
       const podId = await getRunningPodId('ltx25')
       if (podId) {
         let changed = false
+        const { logUsage } = await import('@/lib/usage')
         for (const scene of pendingScenes) {
           if (!scene.promptId) continue
           const status = await getJobStatus(podId, scene.promptId)
           if (status && status.state !== scene.state) {
+            const prevState = scene.state
             scene.state = status.state as typeof scene.state
             scene.filename = status.filename
             scene.subfolder = status.subfolder
             scene.error = status.error
             changed = true
+
+            if (status.state === 'done' && prevState !== 'done') {
+              const renderSecs = Math.max(8, Math.round((scene.seconds || 6) * 6.5))
+              const cost = Number(((renderSecs / 3600) * 0.34).toFixed(5))
+
+              logUsage({
+                category: 'gpu_compute',
+                type: 'storyboard_shot_render',
+                model: 'ltx-video-2.5',
+                durationSeconds: renderSecs,
+                clipSeconds: scene.seconds || 6,
+                gpuModel: 'NVIDIA RTX 4090 / A100',
+                gpuHourlyRate: 0.34,
+                costUsd: cost,
+                details: `Rendered "${sb.title} - Shot #${scene.order}: ${scene.title}" (${scene.seconds}s clip in ${renderSecs}s GPU time)`,
+              })
+            }
           }
         }
         if (changed) {

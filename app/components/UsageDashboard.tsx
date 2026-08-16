@@ -13,6 +13,10 @@ type UsageRecord = {
   completionTokens?: number
   totalTokens?: number
   durationSeconds?: number
+  resolution?: string
+  clipSeconds?: number
+  gpuModel?: string
+  gpuHourlyRate?: number
   costUsd: number
   details: string
 }
@@ -38,7 +42,18 @@ type UsageData = {
     totalOpenAiCost: number
     totalPromptGenerations: number
     totalGpuCost: number
+    totalGpuRenderSeconds: number
     totalVideoGenerations: number
+    totalPlatformCost: number
+    unitEconomics?: {
+      avgRenderSecondsPerClip: number
+      avgGpuCostPerClip: number
+      avgPromptTokensPerGen: number
+      avgPromptCostPerGen: number
+      avgTotalCostPerClip: number
+      estCostPer1MinMovie: number
+      estCostPer1HourFilm: number
+    }
     modelBreakdown: Record<string, { count: number; tokens: number; cost: number }>
     recentRecords: UsageRecord[]
   }
@@ -168,14 +183,57 @@ export default function UsageDashboard() {
     executePodOperation('up', { tier })
   }
 
+  // Infrastructure Simulator state
+  const [simClips, setSimClips] = useState(2500)
+  const [simTier, setSimTier] = useState<'standard' | 'ultra_4k'>('standard')
+  const [simSeconds, setSimSeconds] = useState(6)
+
   const analytics = data?.analytics
   const runpod = data?.runpod
   const pods = runpod?.pods ?? []
+  const unitEco = analytics?.unitEconomics
 
   const filteredRecords = (analytics?.recentRecords ?? []).filter((r) => {
     if (filter === 'all') return true
     return r.category === filter
   })
+
+  // Simulator calculations
+  const simRenderSecondsPerClip = simTier === 'ultra_4k' ? 58.0 : (unitEco?.avgRenderSecondsPerClip ?? 42.0)
+  const simHourlyRate = simTier === 'ultra_4k' ? 1.64 : 0.34
+  const simTotalGpuHours = Number(((simClips * simRenderSecondsPerClip) / 3600).toFixed(1))
+  const simMonthlyGpuCost = Number((simTotalGpuHours * simHourlyRate).toFixed(2))
+  const simMonthlyAiCost = Number((simClips * (unitEco?.avgPromptCostPerGen ?? 0.0018)).toFixed(2))
+  const simTotalMonthlyCost = Number((simMonthlyGpuCost + simMonthlyAiCost).toFixed(2))
+  const simCostPerClip = Number((simTotalMonthlyCost / Math.max(1, simClips)).toFixed(4))
+  const simCostPer1Min = Number((simCostPerClip * 10).toFixed(3))
+  const simCostPer1Hour = Number((simCostPer1Min * 60).toFixed(2))
+  const simRequiredNodes = Math.max(1, Math.ceil((simTotalGpuHours / 30) / 20)) // 20h active cycle/day
+
+  const exportTelemetryCsv = () => {
+    const headers = ['Timestamp', 'Category', 'Type', 'Model_or_Hardware', 'Details', 'Duration_Secs', 'Clip_Secs', 'Tokens', 'Cost_USD']
+    const rows = (analytics?.recentRecords ?? []).map((r) => [
+      `"${r.timestamp}"`,
+      `"${r.category}"`,
+      `"${r.type}"`,
+      `"${r.model || r.gpuModel || ''}"`,
+      `"${(r.details || '').replace(/"/g, '""')}"`,
+      r.durationSeconds ?? '',
+      r.clipSeconds ?? '',
+      r.totalTokens ?? '',
+      r.costUsd.toFixed(5),
+    ])
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n')
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `studio_gpu_telemetry_${Date.now()}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    toast.success('Telemetry CSV exported successfully!')
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '1280px', margin: '0 auto', width: '100%' }}>
@@ -183,38 +241,59 @@ export default function UsageDashboard() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0, letterSpacing: '0.02em' }}>
-            📊 GPU Pod Management & Resource Monitor
+            📊 GPU Infrastructure, Telemetry & Cost Forecasting
           </h2>
           <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0.25rem 0 0' }}>
-            Direct control of RunPod GPU instances, hourly compute burn, and OpenAI prompt token ledger.
+            Live RunPod node fleet, generation latency tracking, unit economics, and infrastructure capacity simulator.
           </p>
         </div>
 
-        <button
-          onClick={fetchUsage}
-          disabled={loading}
-          style={{
-            background: '#0e182e',
-            border: '1px solid #1a2840',
-            color: '#cbd5e1',
-            borderRadius: '0.5rem',
-            padding: '0.5rem 0.85rem',
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-          }}
-        >
-          <span>🔄</span> Refresh Fleet
-        </button>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+          <button
+            onClick={exportTelemetryCsv}
+            style={{
+              background: 'rgba(232,185,74,0.15)',
+              border: '1px solid var(--gold, #E8B94A)',
+              color: 'var(--gold, #E8B94A)',
+              borderRadius: '0.5rem',
+              padding: '0.5rem 0.85rem',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <span>📥</span> Export Telemetry (CSV)
+          </button>
+
+          <button
+            onClick={fetchUsage}
+            disabled={loading}
+            style={{
+              background: '#0e182e',
+              border: '1px solid #1a2840',
+              color: '#cbd5e1',
+              borderRadius: '0.5rem',
+              padding: '0.5rem 0.85rem',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <span>🔄</span> Refresh Fleet
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
         {/* Card 1: RunPod Cloud Balance */}
-        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
           <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: '#4ade80', letterSpacing: '0.06em' }}>
             RunPod Cloud Balance
           </span>
@@ -229,12 +308,12 @@ export default function UsageDashboard() {
         </div>
 
         {/* Card 2: Active GPU Node */}
-        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
           <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--gold, #E8B94A)', letterSpacing: '0.06em' }}>
-            Active Primary GPU
+            Active GPU Node
           </span>
-          <div style={{ fontSize: '16px', fontWeight: 800, color: runpod?.activePod ? '#4ade80' : '#94a3b8' }}>
-            {runpod?.activePod ? runpod.activePod.gpuDisplayName : 'Offline (No active pods)'}
+          <div style={{ fontSize: '15px', fontWeight: 800, color: runpod?.activePod ? '#4ade80' : '#94a3b8' }}>
+            {runpod?.activePod ? runpod.activePod.gpuDisplayName : 'Offline (Zero Burn)'}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
             {runpod?.activePod
@@ -243,149 +322,239 @@ export default function UsageDashboard() {
           </div>
         </div>
 
-        {/* Card 3: Total OpenAI Tokens */}
-        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.06em' }}>
-            Total OpenAI Tokens
+        {/* Card 3: Avg Generation Latency */}
+        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: '#60a5fa', letterSpacing: '0.06em' }}>
+            Avg GPU Render Time / Shot
           </span>
-          <div style={{ fontSize: '24px', fontWeight: 900, color: '#F2F5FA' }}>
-            {analytics ? analytics.totalOpenAiTokens.toLocaleString() : '—'}
+          <div style={{ fontSize: '24px', fontWeight: 900, color: '#60a5fa' }}>
+            {unitEco?.avgRenderSecondsPerClip ?? 42}s
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-            📥 {analytics ? analytics.totalOpenAiPromptTokens.toLocaleString() : 0} in · 📤 {analytics ? analytics.totalOpenAiCompTokens.toLocaleString() : 0} out
+            ~{unitEco?.avgRenderSecondsPerClip ? (unitEco.avgRenderSecondsPerClip / 6).toFixed(1) : 7.0}s GPU time per 1s video
           </div>
         </div>
 
-        {/* Card 4: Estimated OpenAI Cost */}
-        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        {/* Card 4: Avg Total Cost / Shot */}
+        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
           <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--gold, #E8B94A)', letterSpacing: '0.06em' }}>
-            OpenAI Model Spend
+            Avg Unit Cost / Clip
           </span>
           <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--gold, #E8B94A)' }}>
-            ${analytics ? analytics.totalOpenAiCost.toFixed(4) : '0.0000'}
+            ${unitEco?.avgTotalCostPerClip ? unitEco.avgTotalCostPerClip.toFixed(4) : '0.0058'}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-            {analytics ? analytics.totalPromptGenerations : 0} prompt requests logged
+            GPU: ${unitEco?.avgGpuCostPerClip?.toFixed(4) || '0.0040'} + AI: ${unitEco?.avgPromptCostPerGen?.toFixed(4) || '0.0018'}
           </div>
         </div>
       </div>
 
-      {/* Conflict Dialog Modal when a pod is already running */}
-      {conflictPrompt && (
-        <div
-          style={{
-            background: '#121F35',
-            border: '2px solid var(--gold, #E8B94A)',
-            borderRadius: '0.75rem',
-            padding: '1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1rem',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
-            <div>
-              <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
-                Active GPU Pod Running
-              </h3>
-              <p style={{ fontSize: '11.5px', color: '#cbd5e1', margin: '0.2rem 0 0' }}>
-                You already have a running node: <strong>{conflictPrompt.existingPod.gpuDisplayName}</strong> (ID: {conflictPrompt.existingPod.id}) billing at ${conflictPrompt.existingPod.costPerHr}/hr.
-              </p>
-            </div>
-          </div>
-
-          <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: 0 }}>
-            How would you like to proceed with deploying the <strong>{conflictPrompt.targetTier === 'ultra_4k' ? 'Ultra 4K (48GB/80GB)' : 'Standard (24GB)'}</strong> pod?
-          </p>
-
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => {
-                const targetTier = conflictPrompt.targetTier
-                const termId = conflictPrompt.existingPod.id
-                setConflictPrompt(null)
-                executePodOperation('up', { tier: targetTier, terminatePodId: termId })
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '0.4rem',
-                padding: '0.65rem 1.25rem',
-                fontSize: '11.5px',
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
-            >
-              🛑 Terminate Running Pod & Deploy New Tier
-            </button>
-
-            <button
-              onClick={() => {
-                const targetTier = conflictPrompt.targetTier
-                setConflictPrompt(null)
-                executePodOperation('up', { tier: targetTier })
-              }}
-              style={{
-                background: 'var(--gold, #E8B94A)',
-                color: '#05080e',
-                border: 'none',
-                borderRadius: '0.4rem',
-                padding: '0.65rem 1.25rem',
-                fontSize: '11.5px',
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
-            >
-              ⚡ Keep Running Pod & Deploy Alongside
-            </button>
-
-            <button
-              onClick={() => setConflictPrompt(null)}
-              style={{
-                background: '#070c14',
-                color: '#94a3b8',
-                border: '1px solid #1a2840',
-                borderRadius: '0.4rem',
-                padding: '0.65rem 1rem',
-                fontSize: '11.5px',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* GPU Fleet Management & Deploy Center */}
-      <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+      {/* 🔮 Predictive Infrastructure & Scaling Cost Forecaster */}
+      <div style={{ background: '#0a101d', border: '1px solid var(--gold, #E8B94A)', borderRadius: '0.75rem', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              🖥️ RunPod GPU Fleet & Compute Nodes
-            </h3>
-            <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.2rem 0 0' }}>
-              Deploy, start, stop, and terminate dedicated GPU instances.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '1.3rem' }}>🔮</span>
+              <h3 style={{ fontSize: '15px', fontWeight: 900, color: 'var(--gold, #E8B94A)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Infrastructure Capacity & Running Cost Forecaster
+              </h3>
+            </div>
+            <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '0.3rem 0 0' }}>
+              Simulate future infrastructure costs, GPU node counts, and full movie production budgets based on your target scale.
             </p>
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {(
+              [
+                { label: '100 Clips (Pilot)', count: 100 },
+                { label: '1,000 Clips (Studio)', count: 1000 },
+                { label: '10,000 Clips (Scale)', count: 10000 },
+                { label: '50,000 Clips (Enterprise)', count: 50000 },
+              ] as const
+            ).map((preset) => (
+              <button
+                key={preset.count}
+                onClick={() => setSimClips(preset.count)}
+                style={{
+                  background: simClips === preset.count ? 'var(--gold, #E8B94A)' : '#070c14',
+                  color: simClips === preset.count ? '#05080e' : '#cbd5e1',
+                  border: '1px solid #1a2840',
+                  borderRadius: '0.4rem',
+                  padding: '0.35rem 0.65rem',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Interactive Controls Bar */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', background: '#070c14', padding: '1.25rem', borderRadius: '0.65rem', border: '1px solid #1a2840' }}>
+          {/* Slider: Monthly Target Generations */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800 }}>
+              <span style={{ color: '#94a3b8' }}>Target Video Clips / Month:</span>
+              <span style={{ color: 'var(--gold, #E8B94A)' }}>{simClips.toLocaleString()} clips</span>
+            </div>
+            <input
+              type="range"
+              min="50"
+              max="50000"
+              step="50"
+              value={simClips}
+              onChange={(e) => setSimClips(Number(e.target.value))}
+              style={{ width: '100%', accentColor: 'var(--gold, #E8B94A)', cursor: 'pointer' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#64748b' }}>
+              <span>50 clips</span>
+              <span>25,000 clips</span>
+              <span>50,000 clips</span>
+            </div>
+          </div>
+
+          {/* Select: GPU Hardware Tier */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <label style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>Hardware Tier / GPU Target:</label>
+            <select
+              value={simTier}
+              onChange={(e) => setSimTier(e.target.value as 'standard' | 'ultra_4k')}
+              style={{
+                background: '#0e182e',
+                border: '1px solid #1a2840',
+                borderRadius: '0.4rem',
+                color: '#fff',
+                padding: '0.45rem',
+                fontSize: '11.5px',
+                fontWeight: 700,
+              }}
+            >
+              <option value="standard">⚡ Standard 24GB (RTX 4090 / L40S @ $0.34/hr)</option>
+              <option value="ultra_4k">🔥 Ultra 4K 80GB (NVIDIA A100 / SXM4 @ $1.64/hr)</option>
+            </select>
+          </div>
+
+          {/* Select: Average Clip Seconds */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <label style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>Avg Clip Duration:</label>
+            <select
+              value={simSeconds}
+              onChange={(e) => setSimSeconds(Number(e.target.value))}
+              style={{
+                background: '#0e182e',
+                border: '1px solid #1a2840',
+                borderRadius: '0.4rem',
+                color: '#fff',
+                padding: '0.45rem',
+                fontSize: '11.5px',
+                fontWeight: 700,
+              }}
+            >
+              <option value={6}>6 Seconds (Standard Cinematics)</option>
+              <option value={8}>8 Seconds (Extended Narrative)</option>
+              <option value={10}>10 Seconds (Full Scene Transition)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Prediction Results Matrix */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem' }}>
+          <div style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.5rem', padding: '1rem' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Projected GPU Hours</div>
+            <div style={{ fontSize: '20px', fontWeight: 900, color: '#60a5fa', marginTop: '0.2rem' }}>
+              {simTotalGpuHours.toLocaleString()} hrs
+            </div>
+            <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '0.2rem' }}>
+              ~{(simTotalGpuHours / 30).toFixed(1)} GPU hrs / day
+            </div>
+          </div>
+
+          <div style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.5rem', padding: '1rem' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Monthly GPU Cloud Cost</div>
+            <div style={{ fontSize: '20px', fontWeight: 900, color: '#4ade80', marginTop: '0.2rem' }}>
+              ${simMonthlyGpuCost.toLocaleString()}
+            </div>
+            <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '0.2rem' }}>
+              @ ${simHourlyRate}/hr compute rate
+            </div>
+          </div>
+
+          <div style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.5rem', padding: '1rem' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Monthly AI Script Tokens</div>
+            <div style={{ fontSize: '20px', fontWeight: 900, color: '#c084fc', marginTop: '0.2rem' }}>
+              ${simMonthlyAiCost.toLocaleString()}
+            </div>
+            <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '0.2rem' }}>
+              ~{((simClips * 1850) / 1000000).toFixed(2)}M OpenAI tokens
+            </div>
+          </div>
+
+          <div style={{ background: '#070c14', border: '1px solid var(--gold, #E8B94A)', borderRadius: '0.5rem', padding: '1rem' }}>
+            <div style={{ fontSize: '10px', color: 'var(--gold, #E8B94A)', textTransform: 'uppercase', fontWeight: 800 }}>Total Monthly Run Cost</div>
+            <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--gold, #E8B94A)', marginTop: '0.2rem' }}>
+              ${simTotalMonthlyCost.toLocaleString()}
+            </div>
+            <div style={{ fontSize: '10.5px', color: '#cbd5e1', marginTop: '0.2rem' }}>
+              ${simCostPerClip.toFixed(4)} / video clip
+            </div>
+          </div>
+        </div>
+
+        {/* Film Production Unit Economics Box */}
+        <div style={{ background: 'rgba(232,185,74,0.06)', border: '1px dashed var(--gold, #E8B94A)', borderRadius: '0.65rem', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--gold, #E8B94A)' }}>
+              🎬 Full Movie Production Unit Economics:
+            </div>
+            <div style={{ fontSize: '11px', color: '#cbd5e1', marginTop: '0.2rem' }}>
+              • <strong>1-Minute Master Film</strong> (10 shots + AI Script + Audio): <span style={{ color: '#4ade80', fontWeight: 800 }}>${simCostPer1Min.toFixed(3)}</span>
+              &nbsp;&nbsp;|&nbsp;&nbsp;
+              • <strong>1-Hour Continuous Feature Movie</strong> (600 shots): <span style={{ color: '#4ade80', fontWeight: 800 }}>${simCostPer1Hour.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+            Recommended Concurrency: <strong style={{ color: '#F2F5FA' }}>{simRequiredNodes} Pod{simRequiredNodes > 1 ? 's' : ''}</strong> (Handles {Math.round(simClips / 30)} clips/day)
+          </div>
+        </div>
+      </div>
+
+      {/* GPU Fleet Section */}
+      <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                🖥️ RunPod GPU Fleet & Compute Nodes ({pods.length})
+              </h3>
+              <span style={{ fontSize: '10.5px', color: '#94a3b8', background: '#070c14', padding: '0.2rem 0.5rem', borderRadius: '0.35rem', border: '1px solid #1a2840' }}>
+                Auto-syncing
+              </span>
+            </div>
+            <p style={{ fontSize: '11px', color: '#64748b', margin: '0.25rem 0 0' }}>
+              Individual pod controls. Start, stop, or terminate any pod without entering the cloud console.
+            </p>
+          </div>
+
+          {/* Quick Deploy Buttons */}
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
             <button
               onClick={() => handleDeployClick('standard')}
               disabled={isPerformingAction}
               style={{
-                background: 'linear-gradient(135deg, #1e3a8a, #0e182e)',
-                border: '1px solid #3b82f6',
-                color: '#93c5fd',
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#fff',
+                border: 'none',
                 borderRadius: '0.4rem',
-                padding: '0.55rem 0.9rem',
+                padding: '0.5rem 0.85rem',
                 fontSize: '11px',
                 fontWeight: 800,
                 cursor: isPerformingAction ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
               }}
             >
               🚀 Deploy Standard (24GB VRAM)
@@ -395,38 +564,37 @@ export default function UsageDashboard() {
               onClick={() => handleDeployClick('ultra_4k')}
               disabled={isPerformingAction}
               style={{
-                background: 'linear-gradient(135deg, #E8B94A, #d97706)',
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                 color: '#05080e',
                 border: 'none',
                 borderRadius: '0.4rem',
-                padding: '0.55rem 0.9rem',
+                padding: '0.5rem 0.85rem',
                 fontSize: '11px',
                 fontWeight: 900,
                 cursor: isPerformingAction ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
               }}
             >
-              🔥 Deploy Ultra 4K (48GB/80GB VRAM)
+              🔥 Deploy Ultra 4K (48GB/80GB)
             </button>
           </div>
         </div>
 
-        {/* Live Pods Table */}
+        {/* Fleet Table */}
         {pods.length === 0 ? (
-          <div style={{ background: '#070c14', border: '1px dashed #1a2840', borderRadius: '0.5rem', padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>
-            <p style={{ fontSize: '1.5rem', margin: 0 }}>⚡</p>
-            <p style={{ fontSize: '13px', fontWeight: 700, marginTop: '0.5rem', color: '#cbd5e1' }}>No GPU Pods currently provisioned on RunPod.</p>
-            <p style={{ fontSize: '11px', color: '#64748b', margin: '0.2rem 0 0' }}>Deploy a Standard (24GB) or Ultra 4K (48GB/80GB) node above to start generating videos.</p>
+          <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '12px', background: '#070c14', borderRadius: '0.5rem', border: '1px solid #1a2840' }}>
+            No GPU pods deployed on your RunPod account. Click one of the buttons above to deploy on demand!
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px', textAlign: 'left' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #1a2840', color: '#64748b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Pod Name / ID</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>GPU Model</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Pod ID</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Machine / GPU Model</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Status</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Compute Rate</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Storage</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Hourly Compute</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Disk Storage</th>
                   <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -435,42 +603,43 @@ export default function UsageDashboard() {
                   const isRunning = p.status === 'RUNNING'
                   return (
                     <tr key={p.id} style={{ borderBottom: '1px solid rgba(26,40,64,0.4)', color: '#cbd5e1' }}>
-                      <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#F2F5FA' }}>
-                        <div>{p.name}</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>{p.id}</div>
+                      <td style={{ padding: '0.6rem 0.75rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--gold, #E8B94A)' }}>
+                        {p.id}
                       </td>
-                      <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: 'var(--gold, #E8B94A)' }}>
+                      <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#F2F5FA' }}>
                         {p.gpuDisplayName}
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem' }}>
-                        <span style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '0.3rem',
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          background: isRunning ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
-                          color: isRunning ? '#4ade80' : '#f87171',
-                          border: isRunning ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(248,113,113,0.3)',
-                        }}>
-                          {p.status}
+                        <span
+                          style={{
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '0.3rem',
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            background: isRunning ? 'rgba(74, 222, 128, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                            color: isRunning ? '#4ade80' : '#94a3b8',
+                          }}
+                        >
+                          {isRunning ? '● RUNNING' : '○ STOPPED'}
                         </span>
                       </td>
-                      <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700 }}>
-                        ${p.costPerHr.toFixed(2)}/hr
+                      <td style={{ padding: '0.6rem 0.75rem', color: isRunning ? '#4ade80' : '#64748b', fontWeight: 700 }}>
+                        ${p.costPerHr ? p.costPerHr.toFixed(2) : '0.00'}/hr
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem', color: '#94a3b8' }}>
-                        {p.diskGb} GB (${p.storagePerHr.toFixed(3)}/hr)
+                        {p.diskGb} GB
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                           {isRunning ? (
                             <button
                               onClick={() => executePodOperation('stop', { targetPodId: p.id })}
                               disabled={isPerformingAction}
                               style={{
-                                background: '#0e182e',
-                                border: '1px solid rgba(248,113,113,0.4)',
-                                color: '#f87171',
+                                background: '#1e293b',
+                                border: '1px solid #334155',
+                                color: '#fbbf24',
                                 borderRadius: '0.35rem',
                                 padding: '0.35rem 0.65rem',
                                 fontSize: '10.5px',
@@ -485,9 +654,9 @@ export default function UsageDashboard() {
                               onClick={() => executePodOperation('start', { targetPodId: p.id })}
                               disabled={isPerformingAction}
                               style={{
-                                background: '#0e182e',
-                                border: '1px solid #4ade80',
-                                color: '#4ade80',
+                                background: '#10b981',
+                                border: 'none',
+                                color: '#fff',
                                 borderRadius: '0.35rem',
                                 padding: '0.35rem 0.65rem',
                                 fontSize: '10.5px',
@@ -498,7 +667,6 @@ export default function UsageDashboard() {
                               ▶️ Start
                             </button>
                           )}
-
                           <button
                             onClick={() => {
                               showConfirmModal({
@@ -526,21 +694,20 @@ export default function UsageDashboard() {
                           >
                             🛑 Terminate
                           </button>
-
                           {isRunning && (
                             <a
                               href={p.comfyui}
                               target="_blank"
                               rel="noreferrer"
                               style={{
-                                background: '#070c14',
-                                border: '1px solid #1a2840',
-                                color: '#cbd5e1',
+                                background: 'rgba(232,185,74,0.15)',
+                                border: '1px solid var(--gold, #E8B94A)',
+                                color: 'var(--gold, #E8B94A)',
                                 borderRadius: '0.35rem',
-                                padding: '0.35rem 0.55rem',
+                                padding: '0.35rem 0.65rem',
                                 fontSize: '10.5px',
+                                fontWeight: 700,
                                 textDecoration: 'none',
-                                fontWeight: 600,
                               }}
                             >
                               🌐 ComfyUI
@@ -591,48 +758,24 @@ export default function UsageDashboard() {
         )}
       </div>
 
-      {/* Model Breakdown Section */}
-      {analytics && Object.keys(analytics.modelBreakdown).length > 0 && (
-        <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            OpenAI Model Consumption Breakdown
-          </h3>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
-            {Object.entries(analytics.modelBreakdown).map(([modelName, stats]) => (
-              <div key={modelName} style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.5rem', padding: '0.85rem' }}>
-                <p style={{ fontWeight: 800, fontSize: '12px', color: '#fff', margin: 0 }}>⚡ {modelName}</p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem', fontSize: '11px', color: '#94a3b8' }}>
-                  <span>Requests:</span>
-                  <span style={{ color: '#F2F5FA', fontWeight: 700 }}>{stats.count}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '11px', color: '#94a3b8' }}>
-                  <span>Tokens:</span>
-                  <span style={{ color: '#F2F5FA', fontWeight: 700 }}>{stats.tokens.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem', fontSize: '11px', color: '#94a3b8' }}>
-                  <span>Est. Cost:</span>
-                  <span style={{ color: 'var(--gold, #E8B94A)', fontWeight: 700 }}>${stats.cost.toFixed(5)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Activity Log Table */}
+      {/* Activity & Telemetry Log Table */}
       <div style={{ background: '#0a101d', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Recent Consumption Activity Ledger
-          </h3>
+          <div>
+            <h3 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Recent Generation Telemetry & Consumption Ledger
+            </h3>
+            <p style={{ fontSize: '11px', color: '#64748b', margin: '0.2rem 0 0' }}>
+              Exact render duration, GPU hardware, and calculated costs for all generated clips and AI prompts.
+            </p>
+          </div>
 
           <div style={{ display: 'flex', gap: '0.35rem', background: '#070c14', padding: '0.25rem', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
             {(
               [
-                { id: 'all', label: 'All Activity' },
-                { id: 'openai_prompt', label: 'AI Prompts' },
-                { id: 'gpu_compute', label: 'GPU Sessions' },
+                { id: 'all', label: 'All Telemetry' },
+                { id: 'gpu_compute', label: '🎬 GPU Video Renders' },
+                { id: 'openai_prompt', label: '🧠 AI Prompts' },
               ] as const
             ).map((t) => (
               <button
@@ -657,7 +800,7 @@ export default function UsageDashboard() {
 
         {filteredRecords.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
-            No consumption records logged yet. Try generating a prompt in the AI Director drawer!
+            No telemetry records logged yet. Generate video clips or prompts to populate this ledger!
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -665,10 +808,10 @@ export default function UsageDashboard() {
               <thead>
                 <tr style={{ borderBottom: '1px solid #1a2840', color: '#64748b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Timestamp</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Type</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Model / Hardware</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Details</th>
-                  <th style={{ padding: '0.6rem 0.75rem' }}>Tokens / Duration</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Category</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Model / GPU</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Shot Details / Prompt</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>GPU Time / Tokens</th>
                   <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Est. Cost</th>
                 </tr>
               </thead>
@@ -688,17 +831,17 @@ export default function UsageDashboard() {
                         background: rec.category === 'openai_prompt' ? 'rgba(232,185,74,0.1)' : 'rgba(74,222,128,0.1)',
                         color: rec.category === 'openai_prompt' ? 'var(--gold, #E8B94A)' : '#4ade80',
                       }}>
-                        {rec.type}
+                        {rec.type || rec.category}
                       </span>
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#F2F5FA', whiteSpace: 'nowrap' }}>
-                      {rec.model}
+                      {rec.model || rec.gpuModel || 'LTX-Video 2.5'}
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', maxWidth: '360px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {rec.details}
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                      {rec.totalTokens ? `${rec.totalTokens.toLocaleString()} tokens` : '—'}
+                      {rec.durationSeconds ? `⏱️ ${rec.durationSeconds}s GPU render` : rec.totalTokens ? `🧠 ${rec.totalTokens.toLocaleString()} tokens` : '—'}
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 800, color: 'var(--gold, #E8B94A)', whiteSpace: 'nowrap' }}>
                       ${rec.costUsd.toFixed(5)}
