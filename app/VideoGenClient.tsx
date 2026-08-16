@@ -183,6 +183,7 @@ export default function VideoGenClient() {
   const [submitting, setSubmitting] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [failedVideos, setFailedVideos] = useState<Record<string, boolean>>({})
   const [initialLoading, setInitialLoading] = useState(true)
 
   // Navigation & Drawer states
@@ -936,12 +937,34 @@ export default function VideoGenClient() {
                         }}
                       >
                         {/* Thumbnail / video area */}
-                        {j.state === 'done' && j.filename ? (
+                        {j.state === 'done' && j.filename && !failedVideos[j.id] ? (
                           <video
                             src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
                             controls loop playsInline autoPlay muted preload="metadata"
+                            onError={() => setFailedVideos(prev => ({ ...prev, [j.id]: true }))}
                             style={{ width: '100%', height: '160px', objectFit: 'cover', background: '#000' }}
                           />
+                        ) : failedVideos[j.id] ? (
+                          <div style={{ height: '160px', background: '#070c14', padding: '0.75rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', textAlign: 'center', borderBottom: '1px solid #1a2840' }}>
+                            <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+                            <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 800 }}>Clip Expired (Previous Pod)</span>
+                            <p style={{ fontSize: '9.5px', color: '#94a3b8', margin: 0, lineHeight: 1.25, maxWidth: '210px' }}>
+                              Rendered on a previous pod before auto-caching.
+                            </p>
+                            <button
+                              onClick={() => {
+                                setGenPrompt(j.prompt)
+                                generate({ prompt: j.prompt, label: j.label || 'Re-generated Shot', seconds: j.seconds || 6 })
+                              }}
+                              disabled={submitting}
+                              style={{
+                                marginTop: '0.2rem', background: 'var(--gold)', color: '#05080e', border: 'none',
+                                borderRadius: '0.35rem', padding: '0.3rem 0.65rem', fontSize: '10px', fontWeight: 800, cursor: 'pointer'
+                              }}
+                            >
+                              ⚡ Re-Generate Now
+                            </button>
+                          </div>
                         ) : j.state === 'error' ? (
                           <div style={{ height: '160px', background: 'rgba(248,113,113,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                             <span style={{ fontSize: '1.5rem' }}>⚠️</span>
@@ -1132,12 +1155,35 @@ export default function VideoGenClient() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
                         {jobs.map(j => (
                           <div key={j.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            {j.state === 'done' && j.filename ? (
+                            {j.state === 'done' && j.filename && !failedVideos[j.id] ? (
                               <video
                                 src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
                                 controls loop playsInline preload="metadata"
+                                onError={() => setFailedVideos(prev => ({ ...prev, [j.id]: true }))}
                                 style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }}
                               />
+                            ) : failedVideos[j.id] ? (
+                              <div style={{ height: '160px', background: '#070c14', borderRadius: '0.5rem', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', textAlign: 'center', border: '1px dashed rgba(232,185,74,0.3)' }}>
+                                <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+                                <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 800 }}>Clip Expired (Previous Pod)</span>
+                                <p style={{ fontSize: '9.5px', color: '#94a3b8', margin: 0, lineHeight: 1.3 }}>
+                                  Generated on a previous pod before auto-caching.
+                                </p>
+                                <button
+                                  onClick={() => {
+                                    setGenPrompt(j.prompt)
+                                    setActiveTab('home')
+                                    generate({ prompt: j.prompt, label: j.label || 'Re-generated Shot', seconds: j.seconds || 6 })
+                                  }}
+                                  disabled={submitting}
+                                  style={{
+                                    marginTop: '0.3rem', background: 'var(--gold)', color: '#05080e', border: 'none',
+                                    borderRadius: '0.35rem', padding: '0.35rem 0.75rem', fontSize: '10.5px', fontWeight: 800, cursor: 'pointer'
+                                  }}
+                                >
+                                  ⚡ Re-Generate Scene
+                                </button>
+                              </div>
                             ) : (
                               <div style={{ height: '160px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: j.state === 'error' ? '#f87171' : 'var(--gold)', fontWeight: 700, fontSize: '12px', gap: '0.4rem', border: '1px dashed #1a2840' }}>
                                 <span>{j.state === 'error' ? '⚠️' : '⏳'}</span>
