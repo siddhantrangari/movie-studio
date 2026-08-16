@@ -557,7 +557,7 @@ export default function MovieClient() {
               {shots.map((s, i) => {
                 const on = s.id === active?.id
                 const url = s.filename
-                  ? `/api/admin/videogen/video?filename=${encodeURIComponent(s.filename)}&subfolder=${encodeURIComponent(s.subfolder ?? 'gen')}`
+                  ? `/api/videogen/video?filename=${encodeURIComponent(s.filename)}&subfolder=${encodeURIComponent(s.subfolder ?? 'gen')}`
                   : null
                 return (
                   <div key={s.id} onClick={() => setActiveId(s.id)}
@@ -567,7 +567,7 @@ export default function MovieClient() {
                     }}>
                     <div style={{ position: 'relative', height: '90px', background: '#000' }}>
                       {url ? (
-                        <video src={url} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <video src={url} muted playsInline autoPlay loop style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#64748b' }}>
                           {s.state === 'queued' ? 'Queued...' : s.state === 'running' ? 'Rendering...' : 'Empty'}
@@ -674,7 +674,7 @@ export default function MovieClient() {
                 {films.slice(0, 3).map(f => (
                   <div key={f.id} style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.5rem', padding: '0.75rem' }}>
                     {f.state === 'done' && f.file ? (
-                      <video src={`/api/admin/videogen/assemble?file=${f.file}`} controls playsInline style={{ width: '100%', borderRadius: '0.4rem', background: '#000' }} />
+                      <video src={`/api/videogen/assemble?file=${f.file}`} controls playsInline autoPlay loop muted style={{ width: '100%', borderRadius: '0.4rem', background: '#000' }} />
                     ) : (
                       <div style={{ padding: '0.5rem', fontSize: '11px', color: f.state === 'error' ? '#f87171' : 'var(--gold)' }}>
                         {f.state === 'building' ? 'Rendering MP4 movie...' : f.error ?? 'Failed'}
@@ -685,7 +685,7 @@ export default function MovieClient() {
                         {f.duration ? `${f.duration.toFixed(1)}s` : ''} {f.bytes ? `· ${(f.bytes / 1e6).toFixed(1)}MB` : ''}
                       </span>
                       {f.state === 'done' && f.file && (
-                        <a href={`/api/admin/videogen/assemble?file=${f.file}&download=1`} download style={{ fontSize: '10px', color: 'var(--gold)', fontWeight: 800, textDecoration: 'none' }}>
+                        <a href={`/api/videogen/assemble?file=${f.file}&download=1`} download style={{ fontSize: '10px', color: 'var(--gold)', fontWeight: 800, textDecoration: 'none' }}>
                           Download MP4
                         </a>
                       )}
