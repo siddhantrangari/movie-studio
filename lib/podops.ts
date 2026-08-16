@@ -448,7 +448,17 @@ export async function* bringUp(
     return
   }
 
-  const volume = await findVolume(model)
+  let volume = await findVolume(model)
+  // MiniMax weights total ~65GB. If the network volume is < 100GB (e.g. the 60GB LTX volume),
+  // don't attach it to avoid running out of disk space — use the 200GB pod volume instead.
+  if (isMiniMax && volume && volume.size > 0 && volume.size < 100) {
+    yield {
+      level: 'info',
+      text: `Network volume "${volume.name}" is ${volume.size}GB (MiniMax requires ≥100GB). Allocating 200GB dedicated pod volume instead.`,
+    }
+    volume = null
+  }
+
   if (volume) {
     yield {
       level: 'ok',
