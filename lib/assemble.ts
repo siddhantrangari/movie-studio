@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
+import { spawn, execSync } from 'child_process'
 import crypto from 'crypto'
 import { fetchVideo } from './comfyui'
 import { synthesize, CLONED_VOICE_ID } from './elevenlabs'
@@ -338,15 +338,25 @@ async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, f
       }
     }
 
-    // Captions burned in over the crossfaded video.
+    // Captions burned in over the crossfaded video if supported by ffmpeg.
     let vOut = 'vraw'
     const hasCaptionText = scenes.some((s) => (s.narration ?? '').trim())
+    let assFile: string | null = null
+
     if (captions.enabled && hasCaptionText) {
-      const assFile = path.join(work, 'captions.ass')
-      fs.writeFileSync(assFile, buildAss(scenes, durations, captions))
-      const relAss = path.relative(process.cwd(), assFile).replace(/\\/g, '/')
-      parts.push(`[vraw]subtitles=f='${relAss.replace(/'/g, "\\'")}'[vcap]`)
-      vOut = 'vcap'
+      try {
+        const filters = execSync('ffmpeg -filters 2>&1', { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+        const hasAss = filters.includes(' subtitles ') || filters.includes(' ass ')
+        if (hasAss) {
+          assFile = path.join(work, 'captions.ass')
+          fs.writeFileSync(assFile, buildAss(scenes, durations, captions))
+          const relAss = path.relative(process.cwd(), assFile).replace(/\\/g, '/')
+          parts.push(`[vraw]subtitles=f='${relAss.replace(/'/g, "\\'")}'[vcap]`)
+          vOut = 'vcap'
+        }
+      } catch {
+        // Fall back to assembling without burned-in subtitles if filter check fails
+      }
     }
 
     // Audio: ambience crossfaded, narration delayed to its scene, then mixed.
@@ -416,7 +426,20 @@ async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, f
       out
     )
 
-    await run('ffmpeg', args)
+    try {
+      await run('ffmpeg', args)
+    } catch (err: any) {
+      // If ffmpeg failed specifically on the subtitles filter, retry without it
+      const errStr = String(err?.message || err || '')
+      if (vOut === 'vcap' && (errStr.includes('subtitles') || errStr.includes('No such filter'))) {
+        console.warn('ffmpeg subtitles filter failed, retrying assembly without burned-in captions...')
+        const fallbackParts = parts.filter((p) => !p.includes('subtitles='))
+        const fallbackArgs = ['-y', ...inputs, '-filter_complex', fallbackParts.join(';'), '-map', '[vraw]', ...mapAudio, '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', ...(mapAudio.length ? ['-c:a', 'aac', '-b:a', '192k'] : ['-an']), '-movflags', '+faststart', out]
+        await run('ffmpeg', fallbackArgs)
+      } else {
+        throw err
+      }
+    }
 
     const bytes = fs.statSync(out).size
     const duration = await probeDuration(out)
