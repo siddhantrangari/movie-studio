@@ -76,25 +76,25 @@ export function buildMiniMaxWorkflow(p: GenParams) {
   const frames = Math.max(16, Math.ceil((p.seconds ?? 5) * fps))
   const seed = p.seed ?? Math.floor(Math.random() * 2 ** 31)
 
-  // MiniMax H3 FL2VA workflow following Comfy-Org/MiniMax-H3 reference.
-  // Uses WanVideoLatent for video latent space (built-in ComfyUI ≥0.33).
-  // Sampler: euler / simple / CFG=1 (flow-matching distilled model).
+  // MiniMax H3 FL2VA workflow — node names verified live from ComfyUI v0.33.1.
+  // Key nodes: EmptyMiniMaxH3LatentAV (latent), MiniMaxH3SigmaShift (sigmas),
+  //            KSampler with euler/simple/cfg=1, VHS_VideoCombine (output).
   const wf: Record<string, unknown> = {
-    // ── Model loading ─────────────────────────────────────────────────────────
+    // ── Model loading ──────────────────────────────────────────────────────────
     '1': { class_type: 'UNETLoader', inputs: { unet_name: 'minimax_h3_fl2va_int8_convrot.safetensors', weight_dtype: 'default' } },
     '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_32b_minimax_h3_int8_convrot.safetensors', type: 'minimax' } },
     '3': { class_type: 'VAELoader', inputs: { vae_name: 'minimax_h3_video_vae_fp16.safetensors' } },
-    // ── Text conditioning ─────────────────────────────────────────────────────
+    // ── Text conditioning ──────────────────────────────────────────────────────
     '4': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: p.prompt } },
-    // ── Video latent (WanVideoLatent is the correct node for FL2VA in 0.33) ───
-    '6': { class_type: 'WanVideoLatent', inputs: { width, height, length: frames, batch_size: 1 } },
-    // ── Sampling ──────────────────────────────────────────────────────────────
+    // ── MiniMax H3 video latent ────────────────────────────────────────────────
+    '6': { class_type: 'EmptyMiniMaxH3LatentAV', inputs: { width, height, length: frames, batch_size: 1 } },
+    // ── Sampling ───────────────────────────────────────────────────────────────
     '7': {
       class_type: 'KSampler',
       inputs: {
         model: ['1', 0],
         positive: ['4', 0],
-        negative: ['4', 0],   // MiniMax H3 is CFG=1 (no neg conditioning)
+        negative: ['4', 0],   // CFG=1 — no negative conditioning needed
         latent_image: ['6', 0],
         seed,
         steps: 30,
@@ -104,7 +104,7 @@ export function buildMiniMaxWorkflow(p: GenParams) {
         denoise: 1.0,
       },
     },
-    // ── Decode & save ─────────────────────────────────────────────────────────
+    // ── Decode & save ──────────────────────────────────────────────────────────
     '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
     '9': {
       class_type: 'VHS_VideoCombine',
@@ -123,7 +123,7 @@ export function buildMiniMaxWorkflow(p: GenParams) {
   if (p.referenceImage) {
     wf['6a'] = { class_type: 'LoadImage', inputs: { image: p.referenceImage } }
     wf['6'] = {
-      class_type: 'WanVideoLatent',
+      class_type: 'MiniMaxH3ImageToVideo',
       inputs: { image: ['6a', 0], width, height, length: frames, batch_size: 1 },
     }
   }

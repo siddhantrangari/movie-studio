@@ -164,8 +164,22 @@ fetch() {   # fetch <url> <dest-dir> <name>
     for i in "${pids[@]}"; do wait "$i" || failed=1; done
     [ "$failed" -eq 0 ] || { echo "ERROR: download failed for $name"; exit 1; }
 
-    cat "$dest/$name".part* > "$dest/$name"
-    rm -f "$dest/$name".part*
+    # Assemble: write each part directly into its byte offset in the output file,
+    # then delete it immediately.  Peak disk = file-size + one-chunk-size,
+    # vs the old cat strategy which needed 2× file size simultaneously.
+    # Pre-allocate the output file to avoid sparse-file issues.
+    if [ "$total" -gt 0 ] 2>/dev/null; then
+        truncate -s "$total" "$dest/$name" 2>/dev/null || dd if=/dev/zero of="$dest/$name" bs=1 count=0 seek="$total" 2>/dev/null
+    fi
+    local bs=1048576  # 1 MB
+    for i in $(seq 0 $((CHUNKS - 1))); do
+        local pf="$dest/$name.part$i"
+        [ -f "$pf" ] || continue
+        local chunk_start=$(( i * size ))
+        local seek_blocks=$(( chunk_start / bs ))
+        dd if="$pf" of="$dest/$name" bs=$bs seek=$seek_blocks conv=notrunc 2>/dev/null
+        rm -f "$pf"
+    done
     ok "$name downloaded"
 }
 
