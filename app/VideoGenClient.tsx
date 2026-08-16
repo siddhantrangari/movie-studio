@@ -687,14 +687,28 @@ export default function VideoGenClient() {
 
           {/* Action Tools & Pod State Banner */}
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            {/* Top Header Live GPU Indicator */}
             <button onClick={() => setShowPodDrawer(!showPodDrawer)} style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '11px', fontWeight: 700,
-              padding: '0.45rem 0.85rem', borderRadius: '0.5rem', border: '1px solid #1a2840',
-              background: ltxRunning ? 'rgba(74,222,128,0.08)' : '#070c14',
-              color: ltxRunning ? '#4ade80' : '#96A3B6', cursor: 'pointer'
-            }}>
-              <span>⚡</span>
-              GPU Pods: {ltxRunning ? 'Active' : 'Inactive'} (Configure)
+              display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '11px', fontWeight: 800,
+              padding: '0.42rem 0.85rem', borderRadius: '0.5rem',
+              border: `1px solid ${ltxRunning ? 'rgba(74,222,128,0.4)' : 'rgba(232,185,74,0.35)'}`,
+              background: ltxRunning ? 'rgba(74,222,128,0.1)' : '#070c14',
+              color: ltxRunning ? '#4ade80' : 'var(--gold)', cursor: 'pointer',
+              boxShadow: ltxRunning ? '0 0 12px rgba(74,222,128,0.15)' : 'none',
+              transition: 'all 0.2s ease',
+            }}
+            title="Click to manage GPU Compute Nodes"
+            >
+              <span style={{ fontSize: '9px', color: ltxRunning ? '#4ade80' : '#64748b' }}>
+                {ltxRunning ? '●' : '⚡'}
+              </span>
+              {ltxRunning && pods.ltx ? (
+                <span>
+                  {getPodGpuName(pods.ltx)} ({getPodVram(pods.ltx)}GB · ${Number(pods.ltx.costPerHr || 0.54).toFixed(2)}/hr)
+                </span>
+              ) : (
+                <span>GPU Pods: Inactive (Launch Node)</span>
+              )}
             </button>
 
             <Link href="/movie" style={{

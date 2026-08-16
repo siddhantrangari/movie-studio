@@ -232,7 +232,11 @@ export async function submitPrompt(podId: string, workflow: Record<string, unkno
     cache: 'no-store',
   })
   if (!res.ok) {
-    throw new Error(`ComfyUI rejected the workflow (${res.status}): ${(await res.text()).slice(0, 500)}`)
+    const text = await res.text().catch(() => '')
+    if (res.status === 502 || text.includes('Waiting for service to respond') || text.includes('<!DOCTYPE html>') || text.includes('<html')) {
+      throw new Error(`GPU Pod is still initializing (downloading models & starting ComfyUI). Please wait ~30-60 seconds and try again.`)
+    }
+    throw new Error(`ComfyUI rejected the workflow (${res.status}): ${text.slice(0, 300)}`)
   }
   return (await res.json()) as { prompt_id: string }
 }

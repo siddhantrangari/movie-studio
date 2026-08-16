@@ -7,23 +7,27 @@ import { bootCommand, PORTS } from '@/lib/podops'
 
 const RUNPOD_API = 'https://rest.runpod.io/v1'
 
-// Ordered cheapest → most expensive (community pricing)
+// Ordered strictly cheapest → most expensive (community pricing)
 const LTX_GPUS = [
-  'NVIDIA GeForce RTX 3090',   // $0.22/hr — 24GB
-  'NVIDIA GeForce RTX 4090',   // $0.34/hr — 24GB
-  'NVIDIA RTX A6000',          // $0.33/hr — 48GB
-  'NVIDIA A40',                // $0.35/hr — 48GB
-  'NVIDIA L40S',               // $0.79/hr — 48GB
-  'NVIDIA A100 80GB PCIe',     // $1.19/hr — last resort
+  'NVIDIA GeForce RTX 3090',   // ~$0.22/hr — 24GB
+  'NVIDIA RTX A5000',          // ~$0.28/hr — 24GB
+  'NVIDIA GeForce RTX 4090',   // ~$0.34/hr — 24GB
+  'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB
+  'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB
+  'NVIDIA L40',                // ~$0.65/hr — 48GB
+  'NVIDIA L40S',               // ~$0.79/hr — 48GB
+  'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB (Fallback)
+  'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB (Last resort)
 ]
 
-// MiniMax H3 INT8 needs 48GB+
+// MiniMax H3 INT8 needs 48GB+ (cheapest 48GB first)
 const MINIMAX_GPUS = [
-  'NVIDIA RTX A6000',
-  'NVIDIA A40',
-  'NVIDIA L40S',
-  'NVIDIA A100 80GB PCIe',
-  'NVIDIA A100-SXM4-80GB',
+  'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB (Cheapest)
+  'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB
+  'NVIDIA L40',                // ~$0.65/hr — 48GB
+  'NVIDIA L40S',               // ~$0.79/hr — 48GB
+  'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB (Fallback)
+  'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB (Last resort)
 ]
 
 const restHeaders = runpodHeaders

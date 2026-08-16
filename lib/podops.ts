@@ -67,29 +67,33 @@ export function bootCommand(): string {
 
 // Standard 24GB tier (cheap & fast for LTX 2.5 720p/1080p)
 export const STANDARD_GPUS = [
-  'NVIDIA GeForce RTX 3090',
-  'NVIDIA GeForce RTX 4090',
-  'NVIDIA RTX A6000',
-  'NVIDIA A40',
-  'NVIDIA L40S',
+  'NVIDIA GeForce RTX 3090',   // ~$0.22/hr — 24GB
+  'NVIDIA RTX A5000',          // ~$0.28/hr — 24GB
+  'NVIDIA GeForce RTX 4090',   // ~$0.34/hr — 24GB
+  'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB
+  'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB
+  'NVIDIA L40',                // ~$0.65/hr — 48GB
+  'NVIDIA L40S',               // ~$0.79/hr — 48GB
 ]
 
-// Ultra 4K tier (48GB/80GB VRAM required for raw 4K 3D attention volume)
+// Ultra 4K tier (48GB/80GB VRAM required for raw 4K 3D attention volume — cheapest 48GB first)
 export const ULTRA_4K_GPUS = [
-  'NVIDIA RTX A6000',          // 48GB VRAM
-  'NVIDIA A40',                // 48GB VRAM
-  'NVIDIA L40S',               // 48GB VRAM
-  'NVIDIA A100 80GB PCIe',     // 80GB VRAM
-  'NVIDIA A100-SXM4-80GB',     // 80GB VRAM
+  'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB VRAM (Cheapest)
+  'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB VRAM
+  'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM
+  'NVIDIA L40S',               // ~$0.79/hr — 48GB VRAM
+  'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB VRAM (Fallback)
+  'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM (Last resort)
 ]
 
-// MiniMax Hailuo 3 tier (48GB+ VRAM required for MiniMax H3 INT8 transformer)
+// MiniMax Hailuo 3 tier (48GB+ VRAM required for MiniMax H3 INT8 transformer — cheapest 48GB first)
 export const MINIMAX_GPUS = [
-  'NVIDIA RTX A6000',          // 48GB VRAM
-  'NVIDIA A40',                // 48GB VRAM
-  'NVIDIA L40S',               // 48GB VRAM
-  'NVIDIA A100 80GB PCIe',     // 80GB VRAM
-  'NVIDIA A100-SXM4-80GB',     // 80GB VRAM
+  'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB VRAM (Cheapest)
+  'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB VRAM
+  'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM
+  'NVIDIA L40S',               // ~$0.79/hr — 48GB VRAM
+  'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB VRAM (Fallback)
+  'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM (Last resort)
 ]
 
 export type GpuTier = 'standard' | 'ultra_4k'
