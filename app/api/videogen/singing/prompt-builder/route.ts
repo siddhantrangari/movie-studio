@@ -94,8 +94,8 @@ Respond ONLY with valid JSON in this exact structure:
       return NextResponse.json({ scene: parsed })
     }
 
-    // Storyboard mode: calculate scenes
-    const totalScenes = Math.max(1, Math.min(8, Math.ceil(songDuration / segmentDuration)))
+    // Storyboard mode: calculate scenes dynamically for any song length (from 15s up to 7+ minutes)
+    const totalScenes = Math.max(1, Math.min(30, Math.ceil(songDuration / segmentDuration)))
     const sceneRanges: { start: number; end: number; duration: number; label: string }[] = []
     
     for (let i = 0; i < totalScenes; i++) {
