@@ -406,6 +406,77 @@ export async function findVolume(model?: PodModel): Promise<{ id: string; name: 
   return null
 }
 
+export type NetworkVolumeInfo = {
+  id: string
+  name: string
+  dataCenterId: string
+  size: number
+  monthlyCost: number
+  hourlyCost: number
+}
+
+export async function listNetworkVolumes(): Promise<NetworkVolumeInfo[]> {
+  const { data } = await api('/networkvolumes')
+  if (!Array.isArray(data)) return []
+  return data.map((v) => {
+    const size = Number(v.size ?? 0)
+    const monthlyCost = Number((size * 0.07).toFixed(2))
+    const hourlyCost = Number((monthlyCost / 730).toFixed(4))
+    return {
+      id: String(v.id),
+      name: String(v.name ?? 'network-volume'),
+      dataCenterId: String(v.dataCenterId ?? 'EU-RO-1'),
+      size,
+      monthlyCost,
+      hourlyCost,
+    }
+  })
+}
+
+export async function resizeVolume(volumeId: string, newSizeGb: number): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch('https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        query: `mutation { updateNetworkVolume(input: { id: "${volumeId}", size: ${newSizeGb} }) { id size } }`,
+      }),
+      cache: 'no-store',
+    })
+    const j = await res.json()
+    if (j.errors && j.errors.length > 0) {
+      return { ok: false, error: j.errors[0].message }
+    }
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Resize failed' }
+  }
+}
+
+export async function deleteVolume(volumeId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await api(`/networkvolumes/${volumeId}`, { method: 'DELETE' })
+    return { ok: res.ok, error: res.error ? String(res.error) : undefined }
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Delete failed' }
+  }
+}
+
+export async function createVolume(name: string, sizeGb: number, dataCenterId = 'EU-RO-1'): Promise<{ ok: boolean; id?: string; error?: string }> {
+  try {
+    const res = await api('/networkvolumes', {
+      method: 'POST',
+      body: JSON.stringify({ name, size: sizeGb, dataCenterId }),
+    })
+    if (res.data?.id) {
+      return { ok: true, id: res.data.id }
+    }
+    return { ok: false, error: String(res.data?.error || 'Failed to create volume') }
+  } catch (e: any) {
+    return { ok: false, error: e.message || 'Create failed' }
+  }
+}
+
 /**
  * Deploys a pod and provisions it, yielding progress as it goes.
  * Safe to call when a pod already exists — it reports and stops.

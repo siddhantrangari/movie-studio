@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
-import { startJob, currentJob, findPod, listAllPods, accountBalance, type LogLine } from '@/lib/podops'
+import {
+  startJob,
+  currentJob,
+  findPod,
+  listAllPods,
+  accountBalance,
+  listNetworkVolumes,
+  resizeVolume,
+  deleteVolume,
+  createVolume,
+  type LogLine,
+} from '@/lib/podops'
 
 import { PodModel } from '@/lib/runpod'
 
@@ -13,7 +24,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const model = (req.nextUrl.searchParams.get('model') || 'ltx25') as PodModel
-  const [pod, allPods, account] = await Promise.all([findPod(model), listAllPods(), accountBalance()])
+  const [pod, allPods, account, volumes] = await Promise.all([
+    findPod(model),
+    listAllPods(),
+    accountBalance(),
+    listNetworkVolumes(),
+  ])
   const job = currentJob()
 
   const gpu = Number(pod?.costPerHr ?? 0)
@@ -43,6 +59,7 @@ export async function GET(req: NextRequest) {
         }
       : null,
     pods: allPods,
+    volumes,
     account,
     // Lets a reloaded page re-attach to a run already in flight.
     job: job ? { running: job.running, action: job.action, lines: job.lines, tier: job.tier, model: job.model } : null,
@@ -58,7 +75,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { action, tier, model, terminatePodId, targetPodId } = await req.json()
+  const body = await req.json()
+  const { action, tier, model, terminatePodId, targetPodId, volumeId, newSizeGb, volumeName, dataCenterId } = body
+
+  // Direct Network Volume Management Actions
+  if (action === 'resize-volume') {
+    if (!volumeId || !newSizeGb) {
+      return NextResponse.json({ error: 'volumeId and newSizeGb are required' }, { status: 400 })
+    }
+    const res = await resizeVolume(volumeId, Number(newSizeGb))
+    if (!res.ok) return NextResponse.json({ error: res.error || 'Resize failed' }, { status: 500 })
+    return NextResponse.json({ ok: true, message: `Volume resized to ${newSizeGb} GB successfully!` })
+  }
+
+  if (action === 'delete-volume') {
+    if (!volumeId) {
+      return NextResponse.json({ error: 'volumeId is required' }, { status: 400 })
+    }
+    const res = await deleteVolume(volumeId)
+    if (!res.ok) return NextResponse.json({ error: res.error || 'Delete failed' }, { status: 500 })
+    return NextResponse.json({ ok: true, message: 'Volume deleted successfully!' })
+  }
+
+  if (action === 'create-volume') {
+    if (!volumeName || !newSizeGb) {
+      return NextResponse.json({ error: 'volumeName and newSizeGb are required' }, { status: 400 })
+    }
+    const res = await createVolume(volumeName, Number(newSizeGb), dataCenterId || 'EU-RO-1')
+    if (!res.ok) return NextResponse.json({ error: res.error || 'Create failed' }, { status: 500 })
+    return NextResponse.json({ ok: true, id: res.id, message: `Volume ${volumeName} created successfully!` })
+  }
+
   const validActions = ['up', 'down', 'stop', 'start', 'terminate']
   if (!validActions.includes(action)) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
