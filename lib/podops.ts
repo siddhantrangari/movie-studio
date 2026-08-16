@@ -506,7 +506,7 @@ export async function* bringUp(
         // has ample room when no network volume is attached.
         volumeInGb: volume ? 0 : isMiniMax ? 200 : 100,
         containerDiskInGb: volume ? 50 : 50,
-        cloudType: 'ALL',
+        cloudType: 'COMMUNITY',
         ports: PORTS,
         env: envObj,
         dockerEntrypoint: ['/bin/bash', '-c'],
@@ -517,10 +517,20 @@ export async function* bringUp(
         body.volumeMountPath = '/workspace'
       }
 
-      const { data } = await api('/pods', {
+      let createRes = await api('/pods', {
         method: 'POST',
         body: JSON.stringify(body),
       })
+      if (!createRes.data?.id && volume) {
+        // Fall back to SECURE cloud if community node in volume datacenter is busy
+        body.cloudType = 'SECURE'
+        createRes = await api('/pods', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        })
+      }
+
+      const { data } = createRes
       if (data?.id) {
         podId = data.id
         rate = Number(data.costPerHr) || 0.22
