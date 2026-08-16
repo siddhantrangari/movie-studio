@@ -371,9 +371,16 @@ export async function findVolume(model?: PodModel): Promise<{ id: string; name: 
   const { data } = await api('/networkvolumes')
   if (!Array.isArray(data) || data.length === 0) return null
 
-  // 1. Check for dedicated shared volume across all studio engines
+  // 1. Check for dedicated shared volume across all studio engines (>=100GB preferred)
+  const sharedBig = data.find((vol: { name?: string; size?: number }) =>
+    vol.name && vol.name.includes('studio-models') && (vol.size ?? 0) >= 100
+  )
+  if (sharedBig?.id) {
+    return { id: String(sharedBig.id), name: String(sharedBig.name), dataCenterId: String(sharedBig.dataCenterId ?? ''), size: Number(sharedBig.size ?? 0) }
+  }
+
   const shared = data.find((vol: { name?: string }) =>
-    vol.name && ['studio-models', 'ai-models', 'comfyui-models', 'movie-studio-models', 'shared-models'].includes(vol.name)
+    vol.name && ['studio-models', 'studio-models-ca', 'ai-models', 'comfyui-models', 'movie-studio-models', 'shared-models'].includes(vol.name)
   )
   if (shared?.id) {
     return { id: String(shared.id), name: String(shared.name), dataCenterId: String(shared.dataCenterId ?? ''), size: Number(shared.size ?? 0) }
