@@ -2,10 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { buildWorkflow, submitPrompt, uploadImageToPod } from '@/lib/comfyui'
 import { getRunningPodId } from '@/lib/runpod'
-import { getCharacters, readCharacterImage } from '@/lib/studio'
+import { getCharacters, readCharacterImage, getGenerationJobs, saveGenerationJob, deleteGenerationJob, newId } from '@/lib/studio'
 import { composePrompt } from '@/lib/cinematography'
+import { logUsage } from '@/lib/usage'
 
 export const maxDuration = 60
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const projectId = req.nextUrl.searchParams.get('projectId') || undefined
+  const jobs = getGenerationJobs(projectId)
+  return NextResponse.json({ success: true, jobs })
+}
+
+export async function DELETE(req: NextRequest) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
+  deleteGenerationJob(id)
+  return NextResponse.json({ success: true })
+}
 
 export async function POST(req: NextRequest) {
   if (!(await isAdminAuthenticated())) {
@@ -15,7 +36,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     prompt, seconds, width, height, seed, referenceStrength, negativePrompt,
-    characterId, cameraMotion, lens, lighting, colorPalette,
+    characterId, cameraMotion, lens, lighting, colorPalette, projectId, label,
   } = body
   let { referenceImage } = body
 
@@ -64,8 +85,34 @@ export async function POST(req: NextRequest) {
 
   try {
     const { prompt_id } = await submitPrompt(podId, built.workflow)
+
+    const jobId = `job_${newId()}`
+    const saved = saveGenerationJob({
+      id: jobId,
+      projectId: projectId || 'default-project',
+      promptId: prompt_id,
+      prompt,
+      label: label || 'Custom Video Shot',
+      createdAt: Date.now(),
+      state: 'queued',
+      width: built.width,
+      height: built.height,
+      seconds: seconds ?? 4,
+      characterId,
+    })
+
+    logUsage({
+      category: 'video_gen',
+      type: 'clip_render',
+      model: 'LTX 2.5',
+      durationSeconds: seconds ?? 4,
+      costUsd: 0,
+      details: `Generated Clip: "${prompt.slice(0, 50)}..." (${built.width}x${built.height})`,
+    })
+
     return NextResponse.json({
       success: true,
+      job: saved,
       promptId: prompt_id,
       podId,
       seed: built.seed,

@@ -78,12 +78,14 @@ type Job = {
   promptId: string
   label: string
   prompt: string
-  seconds: number
-  state: 'queued' | 'running' | 'done' | 'error'
+  seconds?: number
+  state: 'idle' | 'queued' | 'running' | 'done' | 'error'
   filename?: string
   subfolder?: string
   error?: string
-  startedAt: number
+  startedAt?: number
+  createdAt?: number
+  projectId?: string
 }
 
 type Character = {
@@ -215,6 +217,26 @@ export default function VideoGenClient() {
     }
   }, [])
 
+  const loadGenerations = useCallback(async (projId?: string) => {
+    try {
+      const targetProj = projId ?? activeProjectId
+      const [gRes, fRes] = await Promise.all([
+        fetch(`/api/videogen/generate?projectId=${encodeURIComponent(targetProj || 'all')}`, { cache: 'no-store' }),
+        fetch('/api/videogen/assemble', { cache: 'no-store' }),
+      ])
+      if (gRes.ok) {
+        const gData = await gRes.json()
+        if (gData.jobs) setJobs(gData.jobs)
+      }
+      if (fRes.ok) {
+        const fData = await fRes.json()
+        if (fData.films) setFilms(fData.films)
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeProjectId])
+
   const loadVoices = useCallback(async () => {
     try {
       const res = await fetch('/api/videogen/voices', { cache: 'no-store' })
@@ -227,7 +249,7 @@ export default function VideoGenClient() {
   useEffect(() => {
     ;(async () => {
       try {
-        await Promise.all([fetchStatus(), loadProjects(), loadCharacters(), loadFilms(), loadVoices()])
+        await Promise.all([fetchStatus(), loadProjects(), loadCharacters(), loadFilms(), loadVoices(), loadGenerations()])
       } catch {
         // ignore
       } finally {
@@ -238,7 +260,14 @@ export default function VideoGenClient() {
     // Auto-poll GPU pod status every 15s so node states stay in sync
     const interval = setInterval(fetchStatus, 15_000)
     return () => clearInterval(interval)
-  }, [fetchStatus, loadProjects, loadCharacters, loadFilms, loadVoices])
+  }, [fetchStatus, loadProjects, loadCharacters, loadFilms, loadVoices, loadGenerations])
+
+  // Re-fetch generations when activeTab becomes 'generations' or activeProjectId changes
+  useEffect(() => {
+    if (activeTab === 'generations') {
+      loadGenerations()
+    }
+  }, [activeTab, activeProjectId, loadGenerations])
 
   const createProject = async () => {
     if (!newProjectName.trim()) return
@@ -870,7 +899,7 @@ export default function VideoGenClient() {
                               {j.state === 'queued' ? 'QUEUED' : 'RENDERING…'}
                             </span>
                             <span style={{ fontSize: '10px', color: '#64748b' }}>
-                              {j.seconds}s clip · {Math.round((Date.now() - j.startedAt) / 1000)}s elapsed
+                              {j.seconds || 4}s clip · {j.startedAt ? Math.round((Date.now() - j.startedAt) / 1000) : 0}s elapsed
                             </span>
                             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                           </div>
@@ -985,78 +1014,153 @@ export default function VideoGenClient() {
           {/* Tab 2: MY GENERATIONS HISTORY */}
           {activeTab === 'generations' && (
             <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--gold)', marginBottom: '1rem' }}>
-                MY GENERATIONS & VIDEO HISTORY
-              </h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--gold)', margin: 0 }}>
+                    MY GENERATIONS & VIDEO HISTORY
+                  </h2>
+                  <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.2rem 0 0' }}>
+                    Persistent library of all AI generated video shots and assembled movies.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => loadGenerations()}
+                    style={{
+                      background: '#0e182e', border: '1px solid #1a2840', color: '#cbd5e1',
+                      borderRadius: '0.4rem', padding: '0.4rem 0.75rem', fontSize: '11px', fontWeight: 700,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem'
+                    }}
+                  >
+                    <span>🔄</span> Refresh Library
+                  </button>
+                </div>
+              </div>
               
               {jobs.length === 0 && films.length === 0 ? (
                 <div style={{ background: '#0e182e', border: '1px dashed #1a2840', borderRadius: '1rem', padding: '3rem', textAlign: 'center', color: '#64748b' }}>
-                  <p style={{ fontSize: '1.5rem', margin: 0 }}>🎥</p>
-                  <p style={{ fontSize: '13px', fontWeight: 600, marginTop: '0.5rem' }}>No video generations yet for this project.</p>
+                  <p style={{ fontSize: '1.75rem', margin: 0 }}>🎥</p>
+                  <p style={{ fontSize: '13px', fontWeight: 700, marginTop: '0.5rem', color: '#cbd5e1' }}>No video generations recorded yet.</p>
+                  <p style={{ fontSize: '11px', color: '#64748b', margin: '0.2rem 0 0' }}>Generate a video prompt from the home tab or use the 1-Click Storyboard engine.</p>
                   <button onClick={() => setActiveTab('home')} style={{
                     background: 'var(--gold)', color: '#05080e', border: 'none', borderRadius: '0.5rem',
-                    padding: '0.5rem 1rem', fontWeight: 800, fontSize: '12px', cursor: 'pointer', marginTop: '1rem'
+                    padding: '0.55rem 1.25rem', fontWeight: 800, fontSize: '12px', cursor: 'pointer', marginTop: '1rem'
                   }}>
-                    Create Your First Generation
+                    ✨ Generate Your First Video Shot
                   </button>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                   {/* Generated Clips */}
-                  <div>
-                    <h3 style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '0.75rem' }}>
-                      Generated Clips
-                    </h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-                      {jobs.map(j => (
-                        <div key={j.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                          {j.state === 'done' && j.filename ? (
-                            <video src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
-                              controls loop playsInline style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }} />
-                          ) : (
-                            <div style={{ height: '150px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', fontWeight: 700, fontSize: '12px' }}>
-                              {j.state.toUpperCase()}…
-                            </div>
-                          )}
-                          <div>
-                            <p style={{ fontWeight: 700, fontSize: '13px', margin: 0 }}>{j.label}</p>
-                            <p style={{ fontSize: '11px', color: '#96A3B6', lineHeight: 1.4, margin: '0.3rem 0 0' }}>{j.prompt}</p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button onClick={() => copyToClipboard(j.prompt, j.id)} style={{ flex: 1, background: '#070c14', border: '1px solid #1a2840', color: '#96A3B6', borderRadius: '0.35rem', padding: '0.3rem', fontSize: '10px', cursor: 'pointer' }}>
-                              {copied === j.id ? 'Copied!' : 'Copy Prompt'}
-                            </button>
-                            {j.filename && (
-                              <a href={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`} download style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 700, borderRadius: '0.35rem', padding: '0.3rem', fontSize: '10px' }}>
-                                Download MP4
-                              </a>
+                  {jobs.length > 0 && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <h3 style={{ fontSize: '12px', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, margin: 0 }}>
+                          Generated Video Clips ({jobs.length})
+                        </h3>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
+                        {jobs.map(j => (
+                          <div key={j.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {j.state === 'done' && j.filename ? (
+                              <video
+                                src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
+                                controls loop playsInline
+                                style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }}
+                              />
+                            ) : (
+                              <div style={{ height: '160px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: j.state === 'error' ? '#f87171' : 'var(--gold)', fontWeight: 700, fontSize: '12px', gap: '0.4rem', border: '1px dashed #1a2840' }}>
+                                <span>{j.state === 'error' ? '⚠️' : '⏳'}</span>
+                                <span>{j.state.toUpperCase()}…</span>
+                                {j.error && <span style={{ fontSize: '10px', color: '#f87171', maxWidth: '85%', textAlign: 'center' }}>{j.error}</span>}
+                              </div>
                             )}
+
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <p style={{ fontWeight: 800, fontSize: '12.5px', color: '#F2F5FA', margin: 0 }}>{j.label}</p>
+                                <span style={{ fontSize: '9.5px', color: '#64748b' }}>{new Date(j.createdAt || j.startedAt || Date.now()).toLocaleDateString()}</span>
+                              </div>
+                              <p style={{ fontSize: '11px', color: '#96A3B6', lineHeight: 1.4, margin: '0.35rem 0 0', maxHeight: '55px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {j.prompt}
+                              </p>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: 'auto' }}>
+                              <button
+                                onClick={() => copyToClipboard(j.prompt, j.id)}
+                                style={{ flex: 1, background: '#070c14', border: '1px solid #1a2840', color: '#96A3B6', borderRadius: '0.35rem', padding: '0.35rem', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                {copied === j.id ? '✓ Copied!' : '📋 Copy'}
+                              </button>
+                              {j.filename && (
+                                <a
+                                  href={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
+                                  download
+                                  style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 800, borderRadius: '0.35rem', padding: '0.35rem', fontSize: '10.5px' }}
+                                >
+                                  ⬇️ MP4
+                                </a>
+                              )}
+                              <button
+                                onClick={async () => {
+                                  if (!confirm('Delete this video generation record?')) return
+                                  try {
+                                    await fetch(`/api/videogen/generate?id=${encodeURIComponent(j.id)}`, { method: 'DELETE' })
+                                    setJobs(prev => prev.filter(x => x.id !== j.id && x.promptId !== j.promptId))
+                                  } catch (err) {
+                                    alert((err as Error).message)
+                                  }
+                                }}
+                                style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171', borderRadius: '0.35rem', padding: '0.35rem 0.55rem', fontSize: '10.5px', cursor: 'pointer' }}
+                                title="Delete clip from history"
+                              >
+                                🗑️
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Assembled Stitched Movies */}
                   {films.length > 0 && (
                     <div>
-                      <h3 style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '0.75rem' }}>
-                        Rendered Movies
+                      <h3 style={{ fontSize: '12px', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, marginBottom: '0.75rem' }}>
+                        Rendered Full Movies ({films.length})
                       </h3>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
                         {films.map(f => (
                           <div key={f.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                             {f.file ? (
-                              <video src={`/api/videogen/assemble?file=${encodeURIComponent(f.file)}`} controls loop playsInline style={{ width: '100%', height: '150px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }} />
+                              <video src={`/api/videogen/assemble?file=${encodeURIComponent(f.file)}`} controls loop playsInline style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }} />
                             ) : (
-                              <div style={{ height: '150px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <div style={{ height: '160px', background: '#070c14', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '12px' }}>
                                 Processing Film...
                               </div>
                             )}
                             <div>
-                              <p style={{ fontWeight: 700, fontSize: '13px', margin: 0, color: 'var(--gold)' }}>{f.title}</p>
-                              <p style={{ fontSize: '10px', color: '#64748b', margin: '0.2rem 0 0' }}>Duration: {f.duration}s</p>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <p style={{ fontWeight: 800, fontSize: '13px', margin: 0, color: 'var(--gold)' }}>{f.title}</p>
+                                <span style={{ fontSize: '10px', color: '#64748b' }}>{f.duration}s</span>
+                              </div>
+                              {f.bytes && <p style={{ fontSize: '10px', color: '#64748b', margin: '0.2rem 0 0' }}>Size: {(f.bytes / 1024 / 1024).toFixed(1)} MB</p>}
                             </div>
+
+                            {f.file && (
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <a
+                                  href={`/api/videogen/assemble?file=${encodeURIComponent(f.file)}&download=1`}
+                                  download
+                                  style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 800, borderRadius: '0.35rem', padding: '0.4rem', fontSize: '11px' }}
+                                >
+                                  ⬇️ Download Master Movie MP4
+                                </a>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

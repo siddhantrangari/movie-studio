@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { getJobStatus } from '@/lib/comfyui'
 import { getRunningPodId } from '@/lib/runpod'
+import { updateGenerationJob } from '@/lib/studio'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   if (!(await isAdminAuthenticated())) {
@@ -21,7 +24,18 @@ export async function GET(req: NextRequest) {
   }
 
   const entries = await Promise.all(
-    ids.map(async (id) => [id, await getJobStatus(podId, id)] as const)
+    ids.map(async (id) => {
+      const st = await getJobStatus(podId, id)
+      if (st) {
+        updateGenerationJob(id, {
+          state: st.state as 'queued' | 'running' | 'done' | 'error',
+          filename: st.filename,
+          subfolder: st.subfolder,
+          error: st.error,
+        })
+      }
+      return [id, st] as const
+    })
   )
 
   return NextResponse.json({ podId, jobs: Object.fromEntries(entries) })

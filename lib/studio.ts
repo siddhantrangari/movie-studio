@@ -16,6 +16,7 @@ const AUDIO_DIR = path.join(DATA_DIR, 'audio')
 const STORYBOARD_FILE = path.join(DATA_DIR, 'storyboards.json')
 const CHAR_FILE = path.join(DATA_DIR, 'characters.json')
 const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json')
+const GENERATIONS_FILE = path.join(DATA_DIR, 'generations.json')
 
 function ensureDirs() {
   fs.mkdirSync(CHAR_DIR, { recursive: true })
@@ -256,4 +257,88 @@ export function composeScenePrompt(scene: Scene, characters: Character[]): strin
   parts.push(scene.prompt.trim())
 
   return parts.join('. ').replace(/\.\s*\./g, '.')
+}
+
+// ── Generation Jobs (Custom Video Generations Ledger) ──
+
+export type GenerationJob = {
+  id: string
+  projectId?: string
+  promptId: string
+  prompt: string
+  label: string
+  createdAt: number
+  updatedAt?: number
+  state: 'idle' | 'queued' | 'running' | 'done' | 'error'
+  filename?: string
+  subfolder?: string
+  error?: string
+  width?: number
+  height?: number
+  seconds?: number
+  characterId?: string
+}
+
+export function getGenerationJobs(projectId?: string): GenerationJob[] {
+  const all = readJson<GenerationJob[]>(GENERATIONS_FILE, [])
+  // Discover any generated scenes from storyboards so all generated content appears in history
+  const storyboards = getStoryboards(projectId)
+  const storyboardJobs: GenerationJob[] = []
+  for (const sb of storyboards) {
+    for (const sc of sb.scenes || []) {
+      if (sc.promptId && !all.some((j) => j.promptId === sc.promptId)) {
+        storyboardJobs.push({
+          id: sc.id || `sc_${sc.promptId}`,
+          projectId: sb.projectId,
+          promptId: sc.promptId,
+          prompt: sc.prompt,
+          label: `${sb.title || 'Movie'} - Scene ${sc.order}`,
+          createdAt: sb.createdAt || Date.now(),
+          updatedAt: sb.updatedAt,
+          state: sc.state || 'done',
+          filename: sc.filename,
+          subfolder: sc.subfolder || 'gen',
+          error: sc.error,
+          seconds: sc.seconds,
+        })
+      }
+    }
+  }
+
+  const combined = [...all, ...storyboardJobs]
+  combined.sort((a, b) => b.createdAt - a.createdAt)
+
+  if (!projectId || projectId === 'all') return combined
+  return combined.filter((j) => (j.projectId ?? 'default-project') === projectId || !j.projectId)
+}
+
+export function saveGenerationJob(job: GenerationJob): GenerationJob {
+  const all = readJson<GenerationJob[]>(GENERATIONS_FILE, [])
+  const record: GenerationJob = {
+    ...job,
+    projectId: job.projectId ?? 'default-project',
+    updatedAt: Date.now(),
+  }
+  const idx = all.findIndex((j) => j.id === job.id || j.promptId === job.promptId)
+  if (idx >= 0) {
+    all[idx] = record
+  } else {
+    all.unshift(record)
+  }
+  writeJson(GENERATIONS_FILE, all.slice(0, 500))
+  return record
+}
+
+export function updateGenerationJob(idOrPromptId: string, patch: Partial<GenerationJob>): GenerationJob | null {
+  const all = readJson<GenerationJob[]>(GENERATIONS_FILE, [])
+  const idx = all.findIndex((j) => j.id === idOrPromptId || j.promptId === idOrPromptId)
+  if (idx < 0) return null
+  all[idx] = { ...all[idx], ...patch, updatedAt: Date.now() }
+  writeJson(GENERATIONS_FILE, all)
+  return all[idx]
+}
+
+export function deleteGenerationJob(id: string) {
+  const all = readJson<GenerationJob[]>(GENERATIONS_FILE, [])
+  writeJson(GENERATIONS_FILE, all.filter((j) => j.id !== id && j.promptId !== id))
 }
