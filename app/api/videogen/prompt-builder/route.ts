@@ -103,38 +103,50 @@ Respond ONLY with valid JSON in this exact structure:
 }`
     }
 
+    const requestPayload: Record<string, unknown> = {
+      model,
+      messages: [
+        { role: 'system', content: PHOTOREALISM_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+    }
+
+    // Only add response_format if model is not o1-preview or similar restricted variants
+    if (!model.startsWith('o1-mini') && !model.startsWith('o1-preview')) {
+      requestPayload.response_format = { type: 'json_object' }
+    }
+
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: PHOTOREALISM_SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      }),
+      body: JSON.stringify(requestPayload),
     })
 
     if (!openaiRes.ok) {
       const errText = await openaiRes.text()
-      return NextResponse.json(
-        { error: `OpenAI API Error (${openaiRes.status}): ${errText}` },
-        { status: openaiRes.status }
-      )
+      let errMsg = `OpenAI API Error (${openaiRes.status})`
+      try {
+        const j = JSON.parse(errText)
+        if (j.error?.message) errMsg += `: ${j.error.message}`
+      } catch {
+        errMsg += `: ${errText.slice(0, 300)}`
+      }
+      return NextResponse.json({ error: errMsg }, { status: openaiRes.status })
     }
 
     const data = await openaiRes.json()
-    const content = data.choices?.[0]?.message?.content
+    let content = data.choices?.[0]?.message?.content
     if (!content) {
       return NextResponse.json({ error: 'No response generated from AI' }, { status: 500 })
     }
 
+    // Strip markdown code blocks if the model returned ```json ... ```
+    content = content.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
     const parsed = JSON.parse(content)
+
     return NextResponse.json({
       success: true,
       type: type || 'scene',

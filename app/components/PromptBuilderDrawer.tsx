@@ -27,16 +27,16 @@ type PromptBuilderResult = {
 
 type Props = {
   isOpen: boolean
-  onClose: () => void
+  onToggle: () => void
   initialType?: 'scene' | 'character' | 'movie'
   onApplyScene?: (data: { prompt: string; cameraMotion?: string; lighting?: string; colorPalette?: string }) => void
   onApplyCharacter?: (data: { name: string; description: string; turnaroundPrompt: string }) => void
   onApplyMovie?: (data: { title: string; shots: Array<{ order: number; title: string; seconds: number; prompt: string }> }) => void
 }
 
-export default function PromptBuilderModal({
+export default function PromptBuilderDrawer({
   isOpen,
-  onClose,
+  onToggle,
   initialType = 'scene',
   onApplyScene,
   onApplyCharacter,
@@ -45,18 +45,17 @@ export default function PromptBuilderModal({
   const [type, setType] = useState<'scene' | 'character' | 'movie'>(initialType)
   const [input, setInput] = useState('')
   const [genre, setGenre] = useState('Cinematic Drama')
-  const [cameraStyle, setCameraStyle] = useState('Dynamic Push In')
-  const [lightingStyle, setLightingStyle] = useState('Natural 5600K Daylight')
+  const [cameraStyle, setCameraStyle] = useState('Dynamic Push In (35mm Prime)')
+  const [lightingStyle, setLightingStyle] = useState('Natural 5600K Diffuse Daylight')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PromptBuilderResult | null>(null)
   const [copied, setCopied] = useState(false)
-
-  if (!isOpen) return null
+  const [isWide, setIsWide] = useState(false)
 
   const handleGenerate = async () => {
     if (!input.trim()) {
-      setError('Please enter your idea or concept first.')
+      setError('Please enter your idea or scene concept first.')
       return
     }
     setLoading(true)
@@ -96,40 +95,71 @@ export default function PromptBuilderModal({
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(3, 7, 14, 0.85)',
-        backdropFilter: 'blur(8px)',
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1.5rem',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div
+    <>
+      {/* Floating Right Edge Trigger Pill when collapsed */}
+      {!isOpen && (
+        <button
+          onClick={onToggle}
+          title="Open AI Cinematic Prompt Generator"
+          style={{
+            position: 'fixed',
+            right: 0,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 80,
+            background: 'linear-gradient(135deg, #121F35, #070c14)',
+            border: '1px solid rgba(232,185,74,0.4)',
+            borderRight: 'none',
+            borderRadius: '0.75rem 0 0 0.75rem',
+            padding: '0.75rem 0.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '0.5rem',
+            cursor: 'pointer',
+            boxShadow: '-4px 0 20px rgba(0,0,0,0.5)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <span style={{ fontSize: '1.1rem' }}>✨</span>
+          <span
+            style={{
+              writingMode: 'vertical-rl',
+              textOrientation: 'mixed',
+              fontSize: '11px',
+              fontWeight: 800,
+              color: 'var(--gold, #E8B94A)',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}
+          >
+            AI Prompt Director
+          </span>
+        </button>
+      )}
+
+      {/* Right Drawer Panel */}
+      <aside
         style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: isWide ? 'min(620px, 92vw)' : 'min(440px, 92vw)',
           background: '#0a101d',
-          border: '1px solid #1a2840',
-          borderRadius: '1rem',
-          width: '100%',
-          maxWidth: '720px',
-          maxHeight: '90vh',
+          borderLeft: '1px solid #1a2840',
+          zIndex: 90,
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 25px 60px rgba(0,0,0,0.7)',
-          overflow: 'hidden',
+          boxShadow: isOpen ? '-10px 0 40px rgba(0,0,0,0.7)' : 'none',
+          transform: isOpen ? 'translateX(0)' : 'translateX(105%)',
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.2s ease',
         }}
       >
-        {/* Header */}
+        {/* Drawer Header */}
         <div
           style={{
-            padding: '1.25rem 1.5rem',
+            padding: '1rem 1.25rem',
             borderBottom: '1px solid #1a2840',
             display: 'flex',
             alignItems: 'center',
@@ -137,55 +167,78 @@ export default function PromptBuilderModal({
             background: 'linear-gradient(180deg, #121d33, #0a101d)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <span style={{ fontSize: '1.5rem' }}>✨</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ fontSize: '1.3rem' }}>✨</span>
             <div>
               <h2
                 style={{
-                  fontSize: '15px',
+                  fontSize: '13px',
                   fontWeight: 800,
                   color: 'var(--gold, #E8B94A)',
                   margin: 0,
                   letterSpacing: '0.04em',
                 }}
               >
-                AI CINEMATIC PROMPT GENERATOR
+                AI PROMPT DIRECTOR
               </h2>
-              <p style={{ fontSize: '11px', color: '#64748b', margin: '0.15rem 0 0' }}>
-                OpenAI Photorealism Engine (Physical Optics, Lighting Physics & Micro-Textures)
+              <p style={{ fontSize: '10px', color: '#64748b', margin: '0.1rem 0 0' }}>
+                OpenAI Photorealism Engine (Optics & Physics)
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#94a3b8',
-              fontSize: '1.25rem',
-              cursor: 'pointer',
-              padding: '0.25rem',
-            }}
-          >
-            ✕
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            {/* Expand width button */}
+            <button
+              onClick={() => setIsWide(!isWide)}
+              title={isWide ? 'Standard width' : 'Expand panel'}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid #1a2840',
+                color: '#94a3b8',
+                borderRadius: '0.35rem',
+                padding: '0.3rem 0.5rem',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              {isWide ? '⤡ Normal' : '⤢ Expand'}
+            </button>
+
+            {/* Close/Collapse button */}
+            <button
+              onClick={onToggle}
+              title="Collapse sidebar"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid #1a2840',
+                color: '#94a3b8',
+                borderRadius: '0.35rem',
+                padding: '0.3rem 0.5rem',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              ▶
+            </button>
+          </div>
         </div>
 
-        {/* Tabs */}
+        {/* Mode Selector Tabs */}
         <div
           style={{
             display: 'flex',
             borderBottom: '1px solid #1a2840',
             background: '#070c14',
-            padding: '0.5rem 1.5rem 0',
-            gap: '0.75rem',
+            padding: '0.4rem 0.75rem 0',
+            gap: '0.35rem',
           }}
         >
           {(
             [
-              { key: 'scene', label: '🎬 Scene / Shot Prompt' },
-              { key: 'character', label: '👤 Character Style Sheet' },
-              { key: 'movie', label: '📽️ Complete Movie Storyboard' },
+              { key: 'scene', label: '🎬 Scene' },
+              { key: 'character', label: '👤 Character' },
+              { key: 'movie', label: '📽️ Storyboard' },
             ] as const
           ).map((tab) => (
             <button
@@ -196,15 +249,15 @@ export default function PromptBuilderModal({
                 setError(null)
               }}
               style={{
-                padding: '0.6rem 1rem',
-                fontSize: '12px',
+                padding: '0.45rem 0.65rem',
+                fontSize: '11px',
                 fontWeight: 700,
                 color: type === tab.key ? 'var(--gold, #E8B94A)' : '#64748b',
                 background: type === tab.key ? '#0e182e' : 'transparent',
                 border: '1px solid',
                 borderColor: type === tab.key ? '#1a2840' : 'transparent',
                 borderBottom: 'none',
-                borderRadius: '0.5rem 0.5rem 0 0',
+                borderRadius: '0.4rem 0.4rem 0 0',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}
@@ -214,18 +267,27 @@ export default function PromptBuilderModal({
           ))}
         </div>
 
-        {/* Content Body */}
-        <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Scrollable Form Body */}
+        <div
+          style={{
+            padding: '1.25rem',
+            overflowY: 'auto',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem',
+          }}
+        >
           {/* Controls Bar */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
             <div>
-              <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.3rem' }}>
+              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
                 Genre / Mood
               </label>
               <select
                 value={genre}
                 onChange={(e) => setGenre(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.6rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
               >
                 <option>Cinematic Drama</option>
                 <option>Sci-Fi Action</option>
@@ -238,13 +300,13 @@ export default function PromptBuilderModal({
             </div>
 
             <div>
-              <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.3rem' }}>
-                Lens / Camera Feel
+              <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
+                Lens / Camera
               </label>
               <select
                 value={cameraStyle}
                 onChange={(e) => setCameraStyle(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.6rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+                style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
               >
                 <option>Dynamic Push In (35mm Prime)</option>
                 <option>Handheld Documentary Realism</option>
@@ -254,50 +316,50 @@ export default function PromptBuilderModal({
                 <option>Locked-Off Symmetric Composition</option>
               </select>
             </div>
+          </div>
 
-            <div>
-              <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.3rem' }}>
-                Lighting Physics
-              </label>
-              <select
-                value={lightingStyle}
-                onChange={(e) => setLightingStyle(e.target.value)}
-                style={{ width: '100%', padding: '0.45rem 0.6rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
-              >
-                <option>Natural 5600K Diffuse Daylight</option>
-                <option>Golden Hour Volumetric Backlight</option>
-                <option>Moody Noir Chiaroscuro</option>
-                <option>Warm 2400K Candlelight</option>
-                <option>Cyberpunk Neon Reflections</option>
-                <option>Studio 3-Point Softbox</option>
-              </select>
-            </div>
+          <div>
+            <label style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: '0.25rem' }}>
+              Lighting Physics
+            </label>
+            <select
+              value={lightingStyle}
+              onChange={(e) => setLightingStyle(e.target.value)}
+              style={{ width: '100%', padding: '0.4rem 0.5rem', borderRadius: '0.4rem', background: '#070c14', border: '1px solid #1a2840', color: '#F2F5FA', fontSize: '11px', outline: 'none' }}
+            >
+              <option>Natural 5600K Diffuse Daylight</option>
+              <option>Golden Hour Volumetric Backlight</option>
+              <option>Moody Noir Chiaroscuro</option>
+              <option>Warm 2400K Candlelight</option>
+              <option>Cyberpunk Neon Reflections</option>
+              <option>Studio 3-Point Softbox</option>
+            </select>
           </div>
 
           {/* User Input Prompt */}
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#F2F5FA', display: 'block', marginBottom: '0.4rem' }}>
+            <label style={{ fontSize: '10px', fontWeight: 700, color: '#F2F5FA', display: 'block', marginBottom: '0.35rem' }}>
               {type === 'character'
-                ? 'Describe your character idea:'
+                ? 'Character concept / traits:'
                 : type === 'movie'
-                ? 'Enter your movie logline or scene storyline:'
-                : 'Describe your scene or shot concept in plain words:'}
+                ? 'Movie logline / storyline:'
+                : 'Scene or shot concept in plain words:'}
             </label>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 type === 'character'
-                  ? 'e.g. A seasoned 42-year-old female deep-sea captain with silver-streaked hair, weathered face, wearing a heavy waterproof maritime jacket.'
+                  ? 'e.g. Japanese intelligence agent operating in Shanghai, sharp eyes, tailored dark trench coat, rain-slicked hair.'
                   : type === 'movie'
-                  ? 'e.g. A cyberpunk delivery driver finds a forbidden encrypted AI datadrive in a neon-lit rainstorm alley and is chased across high-tech rooftops.'
-                  : 'e.g. A blacksmith hammering a glowing orange steel blade on an anvil in a dark rustic workshop with sparks flying.'
+                  ? 'e.g. An agent receives an encrypted beacon in Tokyo, flees an ambush on a neon highway, and meets her handler in a hidden tea house.'
+                  : 'e.g. Japanese agent sitting in a dimly lit Shanghai tea house reviewing holographic dossier data, moody window light.'
               }
-              rows={3}
+              rows={4}
               style={{
                 width: '100%',
-                padding: '0.75rem',
-                borderRadius: '0.6rem',
+                padding: '0.65rem',
+                borderRadius: '0.5rem',
                 background: '#070c14',
                 border: '1px solid #1a2840',
                 color: '#F2F5FA',
@@ -305,6 +367,7 @@ export default function PromptBuilderModal({
                 outline: 'none',
                 resize: 'vertical',
                 fontFamily: 'inherit',
+                lineHeight: 1.5,
               }}
             />
           </div>
@@ -313,12 +376,12 @@ export default function PromptBuilderModal({
           {error && (
             <div
               style={{
-                padding: '0.75rem',
-                borderRadius: '0.5rem',
+                padding: '0.6rem 0.75rem',
+                borderRadius: '0.4rem',
                 background: 'rgba(248,113,113,0.1)',
                 border: '1px solid #f87171',
                 color: '#f87171',
-                fontSize: '11px',
+                fontSize: '10.5px',
               }}
             >
               ⚠️ {error}
@@ -330,49 +393,48 @@ export default function PromptBuilderModal({
             onClick={handleGenerate}
             disabled={loading || !input.trim()}
             style={{
-              padding: '0.75rem 1.25rem',
-              borderRadius: '0.6rem',
+              padding: '0.65rem 1rem',
+              borderRadius: '0.5rem',
               background: loading ? '#1a2840' : 'var(--gold, #E8B94A)',
               color: loading ? '#64748b' : '#05080e',
               border: 'none',
               fontWeight: 800,
-              fontSize: '13px',
+              fontSize: '12px',
               cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.5rem',
+              gap: '0.4rem',
               transition: 'all 0.15s ease',
             }}
           >
-            {loading ? '⚡ Generating Director-Grade Prompt...' : '✨ Generate Photorealistic Prompt'}
+            {loading ? '⚡ Crafting Photorealistic Prompt...' : '✨ Generate Cinematic Prompt'}
           </button>
 
           {/* Result View */}
           {result && (
             <div
               style={{
-                marginTop: '0.5rem',
-                padding: '1.25rem',
+                padding: '1rem',
                 background: '#070c14',
                 border: '1px solid rgba(232,185,74,0.3)',
-                borderRadius: '0.75rem',
+                borderRadius: '0.6rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '1rem',
+                gap: '0.75rem',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span
                   style={{
-                    fontSize: '10px',
+                    fontSize: '9.5px',
                     fontWeight: 800,
                     textTransform: 'uppercase',
                     color: 'var(--gold, #E8B94A)',
                     letterSpacing: '0.08em',
                   }}
                 >
-                  ✓ AI Director Output
+                  ✓ AI Director Result
                 </span>
                 <button
                   onClick={() =>
@@ -387,13 +449,13 @@ export default function PromptBuilderModal({
                     border: '1px solid #1a2840',
                     color: '#cbd5e1',
                     borderRadius: '0.35rem',
-                    padding: '0.25rem 0.6rem',
-                    fontSize: '10px',
+                    padding: '0.2rem 0.5rem',
+                    fontSize: '9.5px',
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
                 >
-                  {copied ? '✓ Copied' : '📋 Copy Text'}
+                  {copied ? '✓ Copied' : '📋 Copy'}
                 </button>
               </div>
 
@@ -401,10 +463,10 @@ export default function PromptBuilderModal({
               {type === 'scene' && result.prompt && (
                 <>
                   <div>
-                    <h4 style={{ fontSize: '13px', fontWeight: 800, color: '#fff', margin: 0 }}>
+                    <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#fff', margin: 0 }}>
                       {result.title || 'Cinematic Shot'}
                     </h4>
-                    <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.6, margin: '0.5rem 0 0', whiteSpace: 'pre-wrap' }}>
+                    <p style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: 1.5, margin: '0.4rem 0 0', whiteSpace: 'pre-wrap' }}>
                       {result.prompt}
                     </p>
                   </div>
@@ -417,16 +479,15 @@ export default function PromptBuilderModal({
                           lighting: result.lighting,
                           colorPalette: result.colorPalette,
                         })
-                        onClose()
                       }}
                       style={{
                         background: 'var(--gold, #E8B94A)',
                         color: '#05080e',
                         border: 'none',
-                        borderRadius: '0.5rem',
-                        padding: '0.6rem',
+                        borderRadius: '0.4rem',
+                        padding: '0.5rem',
                         fontWeight: 800,
-                        fontSize: '12px',
+                        fontSize: '11px',
                         cursor: 'pointer',
                       }}
                     >
@@ -440,28 +501,28 @@ export default function PromptBuilderModal({
               {type === 'character' && (
                 <>
                   <div>
-                    <h4 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
                       {result.name} ({result.tag})
                     </h4>
-                    <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '0.35rem 0 0', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: '11px', color: '#cbd5e1', margin: '0.3rem 0 0', lineHeight: 1.4 }}>
                       <strong>Description:</strong> {result.description}
                     </p>
                     {result.wardrobe && (
-                      <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.25rem 0 0' }}>
-                        <strong>Wardrobe & Textures:</strong> {result.wardrobe}
+                      <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '0.2rem 0 0' }}>
+                        <strong>Wardrobe:</strong> {result.wardrobe}
                       </p>
                     )}
                     {result.voiceRecommendation && (
-                      <p style={{ fontSize: '11px', color: 'var(--gold, #E8B94A)', margin: '0.25rem 0 0' }}>
-                        🎙️ <strong>Recommended Voice:</strong> {result.voiceRecommendation}
+                      <p style={{ fontSize: '10.5px', color: 'var(--gold, #E8B94A)', margin: '0.2rem 0 0' }}>
+                        🎙️ {result.voiceRecommendation}
                       </p>
                     )}
                     {result.turnaroundPrompt && (
-                      <div style={{ marginTop: '0.5rem', padding: '0.6rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
-                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
-                          Turnaround Reference Prompt:
+                      <div style={{ marginTop: '0.4rem', padding: '0.5rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
+                        <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                          Turnaround Prompt:
                         </span>
-                        <p style={{ fontSize: '11px', color: '#cbd5e1', margin: '0.25rem 0 0', lineHeight: 1.4 }}>
+                        <p style={{ fontSize: '10.5px', color: '#cbd5e1', margin: '0.2rem 0 0', lineHeight: 1.4 }}>
                           {result.turnaroundPrompt}
                         </p>
                       </div>
@@ -475,16 +536,15 @@ export default function PromptBuilderModal({
                           description: result.description!,
                           turnaroundPrompt: result.turnaroundPrompt || result.description!,
                         })
-                        onClose()
                       }}
                       style={{
                         background: 'var(--gold, #E8B94A)',
                         color: '#05080e',
                         border: 'none',
-                        borderRadius: '0.5rem',
-                        padding: '0.6rem',
+                        borderRadius: '0.4rem',
+                        padding: '0.5rem',
                         fontWeight: 800,
-                        fontSize: '12px',
+                        fontSize: '11px',
                         cursor: 'pointer',
                       }}
                     >
@@ -498,21 +558,21 @@ export default function PromptBuilderModal({
               {type === 'movie' && result.shots && (
                 <>
                   <div>
-                    <h4 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
                       {result.title || 'Movie Storyboard'}
                     </h4>
-                    {result.logline && <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.2rem 0 0.75rem' }}>{result.logline}</p>}
+                    {result.logline && <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '0.15rem 0 0.5rem' }}>{result.logline}</p>}
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
                       {result.shots.map((shot) => (
-                        <div key={shot.order} style={{ padding: '0.6rem 0.75rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
+                        <div key={shot.order} style={{ padding: '0.5rem 0.6rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold, #E8B94A)' }}>
+                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: 'var(--gold, #E8B94A)' }}>
                               Shot #{shot.order}: {shot.title} ({shot.seconds}s)
                             </span>
-                            <span style={{ fontSize: '10px', color: '#64748b' }}>{shot.camera}</span>
+                            <span style={{ fontSize: '9px', color: '#64748b' }}>{shot.camera}</span>
                           </div>
-                          <p style={{ fontSize: '11px', color: '#cbd5e1', margin: '0.3rem 0 0', lineHeight: 1.4 }}>
+                          <p style={{ fontSize: '10.5px', color: '#cbd5e1', margin: '0.25rem 0 0', lineHeight: 1.4 }}>
                             {shot.prompt}
                           </p>
                         </div>
@@ -526,16 +586,15 @@ export default function PromptBuilderModal({
                           title: result.title || 'Generated Movie',
                           shots: result.shots!,
                         })
-                        onClose()
                       }}
                       style={{
                         background: 'var(--gold, #E8B94A)',
                         color: '#05080e',
                         border: 'none',
-                        borderRadius: '0.5rem',
-                        padding: '0.6rem',
+                        borderRadius: '0.4rem',
+                        padding: '0.5rem',
                         fontWeight: 800,
-                        fontSize: '12px',
+                        fontSize: '11px',
                         cursor: 'pointer',
                       }}
                     >
@@ -547,7 +606,7 @@ export default function PromptBuilderModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </aside>
+    </>
   )
 }

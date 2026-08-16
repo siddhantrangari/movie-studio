@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { RESOLUTIONS } from '@/lib/resolutions'
-import PromptBuilderModal from './components/PromptBuilderModal'
+import PromptBuilderDrawer from './components/PromptBuilderDrawer'
 
 type PodData = {
   id: string
@@ -149,7 +149,8 @@ export default function VideoGenClient() {
   const [copied, setCopied] = useState<string | null>(null)
   const [initialLoading, setInitialLoading] = useState(true)
 
-  // Modals / dropdown flags
+  // Navigation & Drawer states
+  const [leftNavCollapsed, setLeftNavCollapsed] = useState(false)
   const [showCharModal, setShowCharModal] = useState(false)
   const [showPodDrawer, setShowPodDrawer] = useState(false)
   const [showPromptBuilder, setShowPromptBuilder] = useState(false)
@@ -408,23 +409,54 @@ export default function VideoGenClient() {
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? 'Default Project'
 
   return (
-    <div style={{ display: 'flex', background: '#05080e', minHeight: '100vh', color: '#F2F5FA', fontFamily: 'var(--font-body)' }}>
-      {/* ── Left Sidebar Navigation ── */}
+    <div style={{ display: 'flex', background: '#05080e', minHeight: '100vh', color: '#F2F5FA', fontFamily: 'var(--font-body)', position: 'relative' }}>
+      {/* ── Left Sidebar Navigation (Collapsible & Expandable) ── */}
       <aside style={{
-        width: '240px', background: '#070c14', borderRight: '1px solid #1a2840',
-        padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '2rem', flexShrink: 0,
+        width: leftNavCollapsed ? '68px' : '240px',
+        background: '#070c14',
+        borderRight: '1px solid #1a2840',
+        padding: leftNavCollapsed ? '1.25rem 0.5rem' : '1.5rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.75rem',
+        flexShrink: 0,
+        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        overflow: 'hidden',
       }}>
-        {/* Brand/App Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '1.5rem' }}>🌌</span>
-          <div>
-            <h1 style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--gold)', letterSpacing: '0.04em', margin: 0 }}>
-              CINEMA STUDIO
-            </h1>
-            <p style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
-              AI Movie Engine
-            </p>
+        {/* Brand / Title & Collapse Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: leftNavCollapsed ? 'center' : 'space-between', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
+            <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>🌌</span>
+            {!leftNavCollapsed && (
+              <div style={{ whiteSpace: 'nowrap' }}>
+                <h1 style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--gold)', letterSpacing: '0.04em', margin: 0 }}>
+                  CINEMA STUDIO
+                </h1>
+                <p style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+                  AI Movie Engine
+                </p>
+              </div>
+            )}
           </div>
+          <button
+            onClick={() => setLeftNavCollapsed(!leftNavCollapsed)}
+            title={leftNavCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid #1a2840',
+              borderRadius: '0.35rem',
+              color: '#94a3b8',
+              padding: '0.25rem 0.45rem',
+              fontSize: '10px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {leftNavCollapsed ? '▶' : '◀'}
+          </button>
         </div>
 
         {/* Menu Links */}
@@ -436,37 +468,67 @@ export default function VideoGenClient() {
           ].map(item => {
             const active = activeTab === item.id
             return (
-              <button key={item.id} onClick={() => setActiveTab(item.id as typeof activeTab)} style={{
-                display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.65rem 0.85rem',
-                borderRadius: '0.5rem', fontSize: '13px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                fontWeight: active ? 700 : 500,
-                background: active ? 'rgba(232, 185, 74, 0.1)' : 'transparent',
-                color: active ? 'var(--gold)' : '#96A3B6',
-              }}>
-                <span>{item.icon}</span>
-                {item.label}
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                title={leftNavCollapsed ? item.label : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: leftNavCollapsed ? 'center' : 'flex-start',
+                  gap: '0.85rem',
+                  padding: leftNavCollapsed ? '0.65rem' : '0.65rem 0.85rem',
+                  borderRadius: '0.5rem',
+                  fontSize: '13px',
+                  border: 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontWeight: active ? 700 : 500,
+                  background: active ? 'rgba(232, 185, 74, 0.1)' : 'transparent',
+                  color: active ? 'var(--gold)' : '#96A3B6',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
+                {!leftNavCollapsed && <span>{item.label}</span>}
               </button>
             )
           })}
 
-          <Link href="/studio" style={{
-            display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.65rem 0.85rem',
-            borderRadius: '0.5rem', fontSize: '13px', textDecoration: 'none', fontWeight: 600,
-            color: 'var(--gold)', background: 'rgba(232, 185, 74, 0.05)', marginTop: '0.5rem',
-            border: '1px solid rgba(232, 185, 74, 0.2)'
-          }}>
-            <span>🎥</span> Movie Studio →
+          <Link
+            href="/studio"
+            title={leftNavCollapsed ? 'Movie Studio' : undefined}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: leftNavCollapsed ? 'center' : 'flex-start',
+              gap: '0.85rem',
+              padding: leftNavCollapsed ? '0.65rem' : '0.65rem 0.85rem',
+              borderRadius: '0.5rem',
+              fontSize: '13px',
+              textDecoration: 'none',
+              fontWeight: 600,
+              color: 'var(--gold)',
+              background: 'rgba(232, 185, 74, 0.05)',
+              marginTop: '0.5rem',
+              border: '1px solid rgba(232, 185, 74, 0.2)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ fontSize: '1.1rem' }}>🎥</span>
+            {!leftNavCollapsed && <span>Movie Studio →</span>}
           </Link>
         </nav>
       </aside>
 
       {/* ── Main Panel Area ── */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', minWidth: 0 }}>
         
         {/* Top Header Row */}
         <header style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '1rem 2.5rem', borderBottom: '1px solid #1a2840', background: '#05080e',
+          padding: '1rem 2rem', borderBottom: '1px solid #1a2840', background: '#05080e', flexWrap: 'wrap', gap: '0.75rem'
         }}>
           {/* Projects Selector in Top Header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1243,10 +1305,10 @@ export default function VideoGenClient() {
         </div>
       )}
 
-      {/* Modal 5: AI Cinematic Prompt Generator */}
-      <PromptBuilderModal
+      {/* Right Drawer: AI Cinematic Prompt Generator */}
+      <PromptBuilderDrawer
         isOpen={showPromptBuilder}
-        onClose={() => setShowPromptBuilder(false)}
+        onToggle={() => setShowPromptBuilder(!showPromptBuilder)}
         initialType={promptBuilderType}
         onApplyScene={(data) => {
           setGenPrompt(data.prompt)

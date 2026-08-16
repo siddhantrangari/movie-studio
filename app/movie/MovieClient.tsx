@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { SHOT_PRESETS, GRADES, buildShotPrompt, type Preset } from '@/lib/presets'
 import { RESOLUTIONS, DEFAULT_RESOLUTION } from '@/lib/resolutions'
 import PodPanel from './PodPanel'
-import PromptBuilderModal from '../components/PromptBuilderModal'
+import PromptBuilderDrawer from '../components/PromptBuilderDrawer'
 
 type Shot = {
   id: string
@@ -691,10 +691,10 @@ export default function MovieClient() {
         </aside>
       </div>
 
-      {/* AI Cinematic Prompt Generator Modal */}
-      <PromptBuilderModal
+      {/* AI Cinematic Prompt Generator Right Drawer */}
+      <PromptBuilderDrawer
         isOpen={showPromptBuilder}
-        onClose={() => setShowPromptBuilder(false)}
+        onToggle={() => setShowPromptBuilder(!showPromptBuilder)}
         initialType={promptBuilderType}
         onApplyScene={(data) => {
           if (active) {
