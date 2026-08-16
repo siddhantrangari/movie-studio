@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     // Auto-poll ComfyUI status for any pending scenes
     const pendingScenes = (sb.scenes || []).filter((s) => s.promptId && (s.state === 'queued' || s.state === 'running' || !s.state))
     if (pendingScenes.length > 0) {
-      const podId = await getRunningPodId('ltx25')
+      const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
       if (podId) {
         let changed = false
         const { logUsage } = await import('@/lib/usage')
@@ -118,9 +118,9 @@ export async function POST(req: NextRequest) {
   const sb = getStoryboard(id)
   if (!sb) return NextResponse.json({ error: 'Storyboard not found' }, { status: 404 })
 
-  const podId = await getRunningPodId('ltx25')
+  const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
   if (!podId) {
-    return NextResponse.json({ error: 'LTX 2.5 GPU Pod is offline. Please start the GPU node from the top banner first.' }, { status: 409 })
+    return NextResponse.json({ error: 'GPU Pod is offline. Please start the GPU node from the top banner first.' }, { status: 409 })
   }
 
   const { RESOLUTIONS } = await import('@/lib/resolutions')

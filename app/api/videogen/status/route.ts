@@ -17,9 +17,8 @@ export async function GET(req: NextRequest) {
     .map((s) => s.trim())
     .filter(Boolean)
 
-  if (ids.length === 0) return NextResponse.json({ jobs: {} })
-
-  const podId = await getRunningPodId('ltx25')
+  const requestedModel = req.nextUrl.searchParams.get('model') as 'ltx25' | 'minimax' | null
+  const podId = requestedModel ? (await getRunningPodId(requestedModel)) : ((await getRunningPodId('ltx25')) || (await getRunningPodId('minimax')))
   if (!podId) {
     return NextResponse.json({ error: 'Pod not running', jobs: {} }, { status: 409 })
   }

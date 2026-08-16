@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Scenes live on the pod, so it has to be up to copy them off.
-  const podId = await getRunningPodId('ltx25')
+  const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
   if (!podId) {
     return NextResponse.json(
       { error: 'The pod holds the generated clips — start it before assembling.' },
