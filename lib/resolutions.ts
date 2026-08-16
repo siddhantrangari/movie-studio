@@ -15,10 +15,10 @@
  * prompt behaves the same — only the detail changes.
  */
 export const RESOLUTIONS = [
-  { label: '720P (1280×720 · 16:9 HD)', w: 1280, h: 720 },
-  { label: '1080P (1920×1080 · 16:9 Full HD)', w: 1920, h: 1080 },
+  { label: '720P (1280×720 · Recommended · Fast & Crisp)', w: 1280, h: 720 },
+  { label: '1080P (1920×1080 · Full HD · High Detail)', w: 1920, h: 1080 },
   { label: '2K (2560×1440 · 16:9 QHD)', w: 2560, h: 1440 },
-  { label: '4K (3840×2160 · 16:9 Ultra HD)', w: 3840, h: 2160 },
+  { label: '4K (3840×2160 · Ultra HD · Requires 48GB+ GPU)', w: 3840, h: 2160 },
   { label: '720P Vertical (720×1280 · 9:16 Shorts)', w: 720, h: 1280 },
   { label: '1080P Vertical (1080×1920 · 9:16 Reels)', w: 1080, h: 1920 },
 ]
