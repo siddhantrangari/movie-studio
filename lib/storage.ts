@@ -50,14 +50,25 @@ export async function putFilm(key: string, filePath: string, contentType = 'vide
 
 export async function signedUrl(
   filename: string,
-  expiresIn = 3600,
-  options?: { userId?: string; projectId?: string }
+  expiresInOrProjectId: number | string = 3600,
+  optionsOrUserId?: { userId?: string; projectId?: string } | string
 ): Promise<string | null> {
   const r2 = getR2Client()
   if (!r2) return null
 
-  const userId = options?.userId || 'admin'
-  const projectId = options?.projectId || 'default-project'
+  let expiresIn = typeof expiresInOrProjectId === 'number' ? expiresInOrProjectId : 3600
+  let userId = 'admin'
+  let projectId = 'default-project'
+
+  if (typeof expiresInOrProjectId === 'string') {
+    projectId = expiresInOrProjectId
+  }
+  if (typeof optionsOrUserId === 'string') {
+    userId = optionsOrUserId
+  } else if (optionsOrUserId && typeof optionsOrUserId === 'object') {
+    if (optionsOrUserId.userId) userId = optionsOrUserId.userId
+    if (optionsOrUserId.projectId) projectId = optionsOrUserId.projectId
+  }
 
   // Candidate paths to check in R2
   const candidateKeys = [
