@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { RESOLUTIONS } from '@/lib/resolutions'
 import PromptBuilderDrawer from './components/PromptBuilderDrawer'
+import UsageDashboard from './components/UsageDashboard'
 
 type PodData = {
   id: string
@@ -112,8 +113,8 @@ export default function VideoGenClient() {
   const [deployError, setDeployError] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
   const [actionLoading, setActionLoading] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
 
-  // Active Tab navigation: 'home' | 'generations' | 'characters'
-  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'characters'>('home')
+  // Active Tab navigation: 'home' | 'generations' | 'characters' | 'usage'
+  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'characters' | 'usage'>('home')
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([])
@@ -507,6 +508,7 @@ export default function VideoGenClient() {
             { id: 'home', label: 'Home', icon: '🏠' },
             { id: 'generations', label: 'My generations', icon: '🖼️' },
             { id: 'characters', label: 'Characters', icon: '👤' },
+            { id: 'usage', label: 'Usage & Costs', icon: '📊' },
           ].map(item => {
             const active = activeTab === item.id
             return (
@@ -1195,6 +1197,13 @@ export default function VideoGenClient() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* TAB 4: USAGE & COST MONITOR */}
+          {activeTab === 'usage' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem 0' }}>
+              <UsageDashboard />
             </div>
           )}
         </div>

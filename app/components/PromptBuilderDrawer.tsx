@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 type PromptBuilderResult = {
   title?: string
@@ -49,10 +49,15 @@ export default function PromptBuilderDrawer({
   const [lightingStyle, setLightingStyle] = useState('⚡ Auto / Cinematic Lighting Physics (AI Decides)')
   const [durationSeconds, setDurationSeconds] = useState(10)
   const [loading, setLoading] = useState(false)
+  const [elapsedSec, setElapsedSec] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PromptBuilderResult | null>(null)
+  const [usage, setUsage] = useState<{ model: string; promptTokens: number; completionTokens: number; totalTokens: number; costUsd: number } | null>(null)
   const [copied, setCopied] = useState(false)
   const [isWide, setIsWide] = useState(false)
+
+  // Timer interval for animated generation progress
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   const handleGenerate = async () => {
     if (!input.trim()) {
@@ -62,6 +67,13 @@ export default function PromptBuilderDrawer({
     setLoading(true)
     setError(null)
     setResult(null)
+    setUsage(null)
+    setElapsedSec(0)
+
+    const startTime = Date.now()
+    timerRef.current = setInterval(() => {
+      setElapsedSec(Number(((Date.now() - startTime) / 1000).toFixed(1)))
+    }, 100)
 
     try {
       const res = await fetch('/api/videogen/prompt-builder', {
@@ -83,10 +95,17 @@ export default function PromptBuilderDrawer({
       }
 
       setResult(data.result)
+      if (data.usage) {
+        setUsage(data.usage)
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {
       setLoading(false)
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
     }
   }
 
@@ -410,27 +429,85 @@ export default function PromptBuilderDrawer({
             </div>
           )}
 
+          {/* Animated Progress Box during generation */}
+          {loading && (
+            <div style={{
+              padding: '0.85rem 1rem',
+              background: 'linear-gradient(135deg, rgba(232,185,74,0.08), rgba(18,31,53,0.9))',
+              border: '1px solid rgba(232,185,74,0.4)',
+              borderRadius: '0.6rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+              boxShadow: '0 0 25px rgba(232,185,74,0.15)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold, #E8B94A)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ display: 'inline-block', animation: 'spin 1.5s linear infinite' }}>✨</span>
+                  AI Director Active
+                </span>
+                <span style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#cbd5e1', background: '#070c14', padding: '0.15rem 0.45rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
+                  ⏱️ {elapsedSec.toFixed(1)}s
+                </span>
+              </div>
+
+              {/* Progress dynamic status phase */}
+              <div style={{ fontSize: '11px', color: '#F2F5FA', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--gold, #E8B94A)', display: 'inline-block', boxShadow: '0 0 8px var(--gold)' }} />
+                {elapsedSec < 2.0
+                  ? 'Analyzing scene concept & narrative context...'
+                  : elapsedSec < 4.5
+                  ? 'Selecting 35mm optical prime lens & choreographing camera moves...'
+                  : elapsedSec < 7.0
+                  ? 'Engineering 5600K lighting physics & volumetric shadow falloff...'
+                  : 'Synthesizing epidermal micro-textures & kinetic motion...'}
+              </div>
+
+              {/* Shimmer progress bar */}
+              <div style={{ width: '100%', height: '4px', background: '#070c14', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(95, elapsedSec * 15)}%`,
+                  background: 'linear-gradient(90deg, #E8B94A, #F5D77F)',
+                  borderRadius: '2px',
+                  transition: 'width 0.2s ease',
+                  boxShadow: '0 0 10px rgba(232,185,74,0.6)',
+                }} />
+              </div>
+            </div>
+          )}
+
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
             disabled={loading || !input.trim()}
             style={{
-              padding: '0.65rem 1rem',
+              padding: '0.75rem 1rem',
               borderRadius: '0.5rem',
-              background: loading ? '#1a2840' : 'var(--gold, #E8B94A)',
-              color: loading ? '#64748b' : '#05080e',
-              border: 'none',
+              background: loading
+                ? 'linear-gradient(90deg, #121F35, #1e3357)'
+                : 'linear-gradient(135deg, #E8B94A, #d4a032)',
+              color: loading ? 'var(--gold, #E8B94A)' : '#05080e',
+              border: loading ? '1px solid rgba(232,185,74,0.3)' : 'none',
               fontWeight: 800,
               fontSize: '12px',
               cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.4rem',
-              transition: 'all 0.15s ease',
+              gap: '0.5rem',
+              boxShadow: loading ? 'none' : '0 4px 15px rgba(232,185,74,0.3)',
+              transition: 'all 0.2s ease',
             }}
           >
-            {loading ? '⚡ Crafting Photorealistic Prompt...' : '✨ Generate Cinematic Prompt'}
+            {loading ? (
+              <>
+                <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⚡</span>
+                <span>Crafting Photorealistic Prompt ({elapsedSec.toFixed(1)}s)...</span>
+              </>
+            ) : (
+              '✨ Generate Cinematic Prompt'
+            )}
           </button>
 
           {/* Result View */}
@@ -480,6 +557,18 @@ export default function PromptBuilderDrawer({
                   {copied ? '✓ Copied' : '📋 Copy'}
                 </button>
               </div>
+
+              {/* Usage & Cost Badge */}
+              {usage && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0.35rem 0.6rem', background: '#0e182e', borderRadius: '0.4rem', border: '1px solid #1a2840',
+                  fontSize: '10px', color: '#94a3b8'
+                }}>
+                  <span>⚡ <strong>{usage.model}</strong> · {usage.totalTokens} Tokens ({usage.promptTokens} in / {usage.completionTokens} out)</span>
+                  <span style={{ color: 'var(--gold, #E8B94A)', fontWeight: 700 }}>Est: ${usage.costUsd.toFixed(5)}</span>
+                </div>
+              )}
 
               {/* Scene Prompt View */}
               {type === 'scene' && result.prompt && (

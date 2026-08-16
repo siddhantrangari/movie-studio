@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
+import { logUsage, estimateOpenAiCost } from '@/lib/usage'
 
 export const maxDuration = 60
 
@@ -157,10 +158,36 @@ Respond ONLY with valid JSON in this exact structure:
     content = content.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
     const parsed = JSON.parse(content)
 
+    // Track and log OpenAI token consumption and estimated costs
+    const promptTokens = data.usage?.prompt_tokens ?? 0
+    const completionTokens = data.usage?.completion_tokens ?? 0
+    const totalTokens = data.usage?.total_tokens ?? (promptTokens + completionTokens)
+    const costUsd = estimateOpenAiCost(model, promptTokens, completionTokens)
+
+    const title = parsed.title || parsed.name || (typeof parsed.logline === 'string' ? parsed.logline.slice(0, 40) : 'Prompt Generation')
+
+    logUsage({
+      category: 'openai_prompt',
+      type: type || 'scene',
+      model,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      costUsd,
+      details: `${type?.toUpperCase() || 'SCENE'}: "${title}" (${input.trim().slice(0, 60)}...)`,
+    })
+
     return NextResponse.json({
       success: true,
       type: type || 'scene',
       result: parsed,
+      usage: {
+        model,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        costUsd,
+      },
     })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })
