@@ -534,7 +534,7 @@ export async function* bringUp(
       }
       if (!createRes.data?.id && volume) {
         // Fall back to global Community fleet with 200GB local volume if volume datacenter is out of GPUs
-        const fallbackBody = { ...body, cloudType: 'COMMUNITY', volumeInGb: isMiniMax ? 200 : 100 }
+        const fallbackBody: Record<string, unknown> = { ...body, cloudType: 'COMMUNITY', volumeInGb: isMiniMax ? 200 : 100 }
         delete fallbackBody.networkVolumeId
         delete fallbackBody.volumeMountPath
         createRes = await api('/pods', {
