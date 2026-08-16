@@ -101,8 +101,11 @@ export type GpuTier = 'standard' | 'ultra_4k'
 /**
  * Minimum download speed worth proceeding with, and only relevant on the
  * fallback path where there is no volume and the models must come down.
+ * LTX 2.5 requires 37 GB → 30 MB/s floor.
+ * MiniMax H3 requires ~19 GB → 15 MB/s is plenty.
  */
-const SPEED_FLOOR_MBPS = 30
+const SPEED_FLOOR_LTX_MBPS = 30
+const SPEED_FLOOR_MINIMAX_MBPS = 15
 
 export type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
 
@@ -446,7 +449,7 @@ export async function* bringUp(
         PUBLIC_KEY: pubkey,
         PROVISION_SCRIPT: provisionScript,
         PROBE_SPEED: volume ? '0' : '1',
-        SPEED_FLOOR_MBPS: String(SPEED_FLOOR_MBPS),
+        SPEED_FLOOR_MBPS: String(isMiniMax ? SPEED_FLOOR_MINIMAX_MBPS : SPEED_FLOOR_LTX_MBPS),
       }
       if (isMiniMax) {
         envObj.download_minimax_h3 = 'true'
