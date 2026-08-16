@@ -189,9 +189,25 @@ export default function VideoGenClient() {
   const [lighting, setLighting] = useState('Auto')
   const [selectedModel, setSelectedModel] = useState<'ltx25' | 'minimax'>('ltx25')
   const [refImages, setRefImages] = useState<string[]>([])
+  const [savedReferences, setSavedReferences] = useState<{ key: string; filename: string; url: string; createdAt: number }[]>([])
+  const [showRefLibraryModal, setShowRefLibraryModal] = useState(false)
+  const [refLoading, setRefLoading] = useState(false)
   const maxRefImages = selectedModel === 'minimax' ? 9 : 5
   const [aspectRatio, setAspectRatio] = useState(0)
   const [mode, setMode] = useState<'video' | 'image'>('video')
+
+  const loadSavedReferences = async () => {
+    setRefLoading(true)
+    try {
+      const res = await fetch(`/api/videogen/references?projectId=${activeProjectId}`)
+      const data = await res.json()
+      if (data.references) setSavedReferences(data.references)
+    } catch (err) {
+      console.error('Error loading references:', err)
+    } finally {
+      setRefLoading(false)
+    }
+  }
 
   const [submitting, setSubmitting] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
@@ -1009,15 +1025,39 @@ export default function VideoGenClient() {
                         {refImages.length} / {maxRefImages} max
                       </span>
                     </div>
-                    {refImages.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                       <button
                         type="button"
-                        onClick={() => setRefImages([])}
-                        style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '10.5px', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={() => {
+                          loadSavedReferences()
+                          setShowRefLibraryModal(true)
+                        }}
+                        style={{
+                          background: 'rgba(232,185,74,0.12)',
+                          border: '1px solid rgba(232,185,74,0.3)',
+                          color: 'var(--gold)',
+                          borderRadius: '0.35rem',
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                        }}
                       >
-                        Clear All
+                        <span>📂 R2 Media Gallery</span>
                       </button>
-                    )}
+                      {refImages.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setRefImages([])}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '10.5px', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1527,6 +1567,89 @@ export default function VideoGenClient() {
                       </div>
                     </div>
                   )}
+
+                  {/* Saved R2 Reference Media Library */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                      <div>
+                        <h3 style={{ fontSize: '12px', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, margin: 0 }}>
+                          Saved Reference Images & Style Boards in R2 ({savedReferences.length})
+                        </h3>
+                        <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '0.15rem 0 0' }}>
+                          Permanent Cloudflare R2 reference media library — select any asset to attach directly to your prompt.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          loadSavedReferences()
+                          setShowRefLibraryModal(true)
+                        }}
+                        style={{
+                          background: 'rgba(232,185,74,0.12)',
+                          border: '1px solid rgba(232,185,74,0.3)',
+                          color: 'var(--gold)',
+                          borderRadius: '0.35rem',
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                        }}
+                      >
+                        <span>📂 Open R2 Library</span>
+                      </button>
+                    </div>
+
+                    {savedReferences.length === 0 ? (
+                      <div style={{ background: '#0e182e', border: '1px dashed #1a2840', borderRadius: '0.6rem', padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
+                        <p style={{ margin: 0, fontSize: '11px' }}>No reference images saved yet. Images uploaded via the prompt reference uploader are automatically saved here.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.75rem' }}>
+                        {savedReferences.map(ref => (
+                          <div key={ref.key} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.5rem', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ height: '90px', width: '100%', position: 'relative', background: '#030712' }}>
+                              <img src={ref.url} alt={ref.filename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                            <div style={{ padding: '0.4rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                              <p style={{ margin: 0, fontSize: '9.5px', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {ref.filename}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!refImages.includes(ref.url)) {
+                                    if (refImages.length >= maxRefImages) {
+                                      toast.error(`Maximum ${maxRefImages} reference images allowed`)
+                                      return
+                                    }
+                                    setRefImages(prev => [...prev, ref.url])
+                                  }
+                                  setActiveTab('home')
+                                  toast.success('Attached reference image to prompt!')
+                                }}
+                                style={{
+                                  background: 'var(--gold)',
+                                  color: '#05080e',
+                                  border: 'none',
+                                  borderRadius: '0.25rem',
+                                  padding: '0.25rem',
+                                  fontSize: '9.5px',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                + Attach to Prompt
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2286,6 +2409,107 @@ export default function VideoGenClient() {
           toast.success('🎬 Master Movie fully assembled and ready!')
         }}
       />
+
+      {/* ── Modal: Cloudflare R2 Reference Media Gallery ── */}
+      {showRefLibraryModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5, 8, 14, 0.85)',
+          backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120
+        }}>
+          <div style={{ background: '#0a101d', border: '1px solid rgba(232, 185, 74, 0.4)', borderRadius: '1rem', padding: '1.5rem', width: '640px', maxWidth: '94vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: '1rem', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>📂</span> R2 Cloud Reference Media Library
+                </h3>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '11px', color: '#94a3b8' }}>
+                  Permanent Cloudflare R2 storage for character identities, scene boards, and style references.
+                </p>
+              </div>
+              <button onClick={() => setShowRefLibraryModal(false)} style={{ background: 'none', border: 'none', color: '#96A3B6', fontSize: '18px', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingRight: '0.25rem', minHeight: '200px' }}>
+              {refLoading ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>Loading R2 assets...</div>
+              ) : savedReferences.length === 0 ? (
+                <div style={{ padding: '3rem 1rem', textAlign: 'center', border: '1px dashed #1a2840', borderRadius: '0.75rem', color: '#64748b' }}>
+                  <p style={{ fontSize: '1.75rem', margin: 0 }}>🖼️</p>
+                  <p style={{ fontSize: '12px', fontWeight: 700, margin: '0.5rem 0 0', color: '#cbd5e1' }}>No reference images saved in R2 yet</p>
+                  <p style={{ fontSize: '11px', color: '#64748b', margin: '0.2rem 0 0' }}>Any reference images uploaded during generation or attached to prompts will automatically appear here permanently.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '0.75rem' }}>
+                  {savedReferences.map((ref) => {
+                    const isSelected = refImages.includes(ref.url)
+                    return (
+                      <div
+                        key={ref.key}
+                        style={{
+                          position: 'relative',
+                          aspectRatio: '1',
+                          borderRadius: '0.5rem',
+                          overflow: 'hidden',
+                          border: isSelected ? '2px solid var(--gold)' : '1px solid #1a2840',
+                          background: '#030712',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onClick={() => {
+                          if (isSelected) {
+                            setRefImages(prev => prev.filter(u => u !== ref.url))
+                          } else {
+                            if (refImages.length >= maxRefImages) {
+                              toast.error(`Maximum ${maxRefImages} reference images allowed`)
+                              return
+                            }
+                            setRefImages(prev => [...prev, ref.url])
+                          }
+                        }}
+                      >
+                        <img src={ref.url} alt={ref.filename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.75)', padding: '2px 4px', fontSize: '8.5px', color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ref.filename}
+                        </div>
+                        {isSelected && (
+                          <span style={{ position: 'absolute', top: '4px', left: '4px', background: 'var(--gold)', color: '#05080e', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 900 }}>
+                            ✓
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            await fetch(`/api/videogen/references?key=${encodeURIComponent(ref.key)}`, { method: 'DELETE' })
+                            setSavedReferences(prev => prev.filter(r => r.key !== ref.key))
+                            setRefImages(prev => prev.filter(u => u !== ref.url))
+                            toast.success('Deleted reference from R2')
+                          }}
+                          style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(239,68,68,0.85)', color: '#fff', border: 'none', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid #142033' }}>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                Selected: <strong style={{ color: 'var(--gold)' }}>{refImages.length} / {maxRefImages}</strong> images
+              </span>
+              <button
+                onClick={() => setShowRefLibraryModal(false)}
+                style={{ background: 'var(--gold)', color: '#05080e', border: 'none', borderRadius: '0.45rem', padding: '0.45rem 1rem', fontWeight: 800, fontSize: '11.5px', cursor: 'pointer' }}
+              >
+                Attach Selected & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

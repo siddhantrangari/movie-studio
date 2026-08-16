@@ -5,6 +5,7 @@ import { getRunningPodId } from '@/lib/runpod'
 import { getCharacters, readCharacterImage, getGenerationJobs, saveGenerationJob, deleteGenerationJob, newId } from '@/lib/studio'
 import { composePrompt } from '@/lib/cinematography'
 import { logUsage } from '@/lib/usage'
+import { putReferenceAsset } from '@/lib/storage'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -62,9 +63,13 @@ export async function POST(req: NextRequest) {
       if (typeof img === 'string' && img.startsWith('data:image/')) {
         const matches = img.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
         if (matches && matches[2]) {
+          const mime = matches[1] || 'image/png'
           const buf = Buffer.from(matches[2], 'base64')
           const fname = `ref_${Date.now()}_${i}.png`
           try {
+            // 1. Permanently preserve in Cloudflare R2 user gallery & media assets
+            await putReferenceAsset(fname, buf, projectId || 'default-project', mime)
+            // 2. Upload directly to GPU pod for diffusion sampling
             const uploadedName = await uploadImageToPod(podId, buf, fname)
             uploadedRefs.push(uploadedName)
           } catch (err) {

@@ -155,3 +155,74 @@ export async function persistClip(
   }
   return localPath
 }
+
+export async function putReferenceAsset(
+  filename: string,
+  buffer: Buffer,
+  projectId = 'default-project',
+  contentType = 'image/png'
+): Promise<{ key: string; filename: string; url: string }> {
+  const r2 = getR2Client()
+  const localDir = path.join(process.cwd(), 'data', 'references')
+  if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true })
+  const localPath = path.join(localDir, filename)
+  fs.writeFileSync(localPath, buffer)
+
+  const key = `references/${projectId}/${filename}`
+  if (r2) {
+    await r2.client.send(
+      new PutObjectCommand({
+        Bucket: r2.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      })
+    )
+  }
+  const url = (await signedUrl(key, 86400 * 7)) || `/api/videogen/references/file?key=${encodeURIComponent(key)}`
+  return { key, filename, url }
+}
+
+export async function listReferenceAssets(
+  projectId = 'default-project'
+): Promise<{ key: string; filename: string; url: string; createdAt: number }[]> {
+  const r2 = getR2Client()
+  const items: { key: string; filename: string; url: string; createdAt: number }[] = []
+
+  // Check local references directory first
+  const localDir = path.join(process.cwd(), 'data', 'references')
+  if (fs.existsSync(localDir)) {
+    const files = fs.readdirSync(localDir)
+    for (const f of files) {
+      if (f.startsWith('.') || !/\.(png|jpe?g|webp|gif)$/i.test(f)) continue
+      const stat = fs.statSync(path.join(localDir, f))
+      const key = `references/${projectId}/${f}`
+      const url = (await signedUrl(key, 86400 * 7)) || (await signedUrl(f, 86400 * 7)) || ''
+      items.push({
+        key,
+        filename: f,
+        url,
+        createdAt: stat.mtimeMs,
+      })
+    }
+  }
+
+  return items.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export async function deleteReferenceAsset(key: string): Promise<void> {
+  const r2 = getR2Client()
+  if (r2) {
+    await r2.client.send(
+      new DeleteObjectCommand({
+        Bucket: r2.bucket,
+        Key: key,
+      })
+    )
+  }
+  const filename = path.basename(key)
+  const localPath = path.join(process.cwd(), 'data', 'references', filename)
+  if (fs.existsSync(localPath)) {
+    fs.unlinkSync(localPath)
+  }
+}
