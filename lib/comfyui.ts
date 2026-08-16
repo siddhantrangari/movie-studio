@@ -151,9 +151,26 @@ export function buildMiniMaxWorkflow(p: GenParams) {
       wf[`6a_${idx}`] = { class_type: 'LoadImage', inputs: { image: img } }
     })
     wf['6'] = {
-      class_type: 'MiniMaxH3ImageToVideo',
-      inputs: { image: ['6a_0', 0], width: baseWidth, height: baseHeight, length: frames, batch_size: 1 },
+      class_type: 'MiniMaxH3ReferenceToVideo',
+      inputs: {
+        clip: ['2', 0],
+        vae: ['3', 0],
+        audio_vae: ['3b', 0],
+        'ref_images.ref_image_0': ['6a_0', 0],
+        prompt: p.prompt,
+        width: baseWidth,
+        height: baseHeight,
+        length: frames,
+        ref_image_size: 'match',
+      },
     }
+    // MiniMaxH3ReferenceToVideo outputs:
+    // Output 0: positive (CONDITIONING)
+    // Output 1: LATENT (LATENT)
+    const ksampler = wf['7'] as { inputs: Record<string, unknown> }
+    ksampler.inputs.positive = ['6', 0]
+    ksampler.inputs.negative = ['6', 0]
+    ksampler.inputs.latent_image = ['6', 1]
   }
 
   return { workflow: wf, seed, length: frames, width: targetWidth, height: targetHeight, fps }
