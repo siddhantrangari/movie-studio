@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useToast } from './Toast'
+import PodLogsModal from './PodLogsModal'
 
 export type PodInfo = {
   id: string
@@ -57,6 +58,7 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
   const [newVolDc, setNewVolDc] = useState('EU-RO-1')
   const [autoShutdownMinutes, setAutoShutdownMinutes] = useState<number>(5)
   const [deployingModel, setDeployingModel] = useState<'minimax' | 'ltx25' | null>(null)
+  const [inspectingPodId, setInspectingPodId] = useState<string | null>(null)
   const logContainerRef = React.useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -1133,23 +1135,42 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
                             🛑 Terminate
                           </button>
                           {isRunning && (
-                            <a
-                              href={p.comfyui}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                background: 'rgba(232,185,74,0.15)',
-                                border: '1px solid var(--gold, #E8B94A)',
-                                color: 'var(--gold, #E8B94A)',
-                                borderRadius: '0.35rem',
-                                padding: '0.35rem 0.65rem',
-                                fontSize: '10.5px',
-                                fontWeight: 700,
-                                textDecoration: 'none',
-                              }}
-                            >
-                              🌐 ComfyUI
-                            </a>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setInspectingPodId(p.id)}
+                                style={{
+                                  background: 'rgba(59,130,246,0.15)',
+                                  border: '1px solid rgba(59,130,246,0.4)',
+                                  color: '#93c5fd',
+                                  borderRadius: '0.35rem',
+                                  padding: '0.35rem 0.65rem',
+                                  fontSize: '10.5px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                📋 Live Console
+                              </button>
+
+                              <a
+                                href={p.comfyui}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  background: 'rgba(232,185,74,0.15)',
+                                  border: '1px solid var(--gold, #E8B94A)',
+                                  color: 'var(--gold, #E8B94A)',
+                                  borderRadius: '0.35rem',
+                                  padding: '0.35rem 0.65rem',
+                                  fontSize: '10.5px',
+                                  fontWeight: 700,
+                                  textDecoration: 'none',
+                                }}
+                              >
+                                🌐 ComfyUI
+                              </a>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1161,6 +1182,16 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
           </div>
         )}
 
+        {/* Live Pod Inspector & Console Modal */}
+        <PodLogsModal
+          isOpen={!!inspectingPodId}
+          podId={inspectingPodId || undefined}
+          onClose={() => setInspectingPodId(null)}
+          onTerminate={async (pid) => {
+            await executePodOperation('terminate', { targetPodId: pid })
+            setInspectingPodId(null)
+          }}
+        />
       </div>
     </div>
   )
