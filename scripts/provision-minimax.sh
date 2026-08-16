@@ -56,18 +56,19 @@ wait_for_comfy() {
 # ── GPU health & VRAM check ───────────────────────────────────────────────────
 check_gpu() {
     log "Checking GPU capability for MiniMax Hailuo 3 (requires 48GB+ VRAM)"
-    if ! python3 -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
-        nvidia-smi --query-gpu=name --format=csv,noheader 2>&1 | head -2 || true
-        echo "GPU_BROKEN: torch cannot initialise CUDA on this host"
-        return 1
-    fi
-    local vram
-    vram=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || echo 0)
-    if [ "$vram" -lt 40000 ]; then
-        echo "GPU_LOW_VRAM: Host has ${vram}MB VRAM. MiniMax Hailuo 3 requires 48GB+ (A6000, A40, L40S, A100)."
-    fi
-    ok "GPU is usable ($vram MB VRAM detected)"
-    return 0
+    local i
+    for i in $(seq 1 8); do
+        if python3 -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
+            local vram
+            vram=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || echo 0)
+            ok "GPU is usable ($vram MB VRAM detected)"
+            return 0
+        fi
+        sleep 2
+    done
+    nvidia-smi --query-gpu=name --format=csv,noheader 2>&1 | head -2 || true
+    echo "GPU_BROKEN: torch cannot initialise CUDA on this host"
+    return 1
 }
 
 # ── Bandwidth probe ───────────────────────────────────────────────────────────
