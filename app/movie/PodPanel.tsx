@@ -38,6 +38,14 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
 
   useEffect(() => { refresh() }, [refresh])
 
+  // Auto-poll every 15 s when not actively streaming logs, so a stale
+  // "GPU OFFLINE" after a successful boot corrects itself without a page reload.
+  useEffect(() => {
+    if (busy) return
+    const id = setInterval(refresh, 15_000)
+    return () => clearInterval(id)
+  }, [busy, refresh])
+
   // Follow the tail as lines arrive.
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight

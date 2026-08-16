@@ -7,15 +7,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- BEGIN:deploy-sop-rules -->
 # Deploy SOP — READ BEFORE ANY BUILD/PUSH/DEPLOY TASK
 
-Before performing any build, commit, push, or deploy action for this project, you MUST read the full SOP at:
-`docs/sop-deploy.md`
-
 Key rules to memorize:
 - SSH alias is `vps` (never `hostinger` or a raw IP)
-- VPS path: `/var/www/siddhantrangari`
-- PM2 process name: `siddhantrangari`
-- Deploy command: `ssh vps "cd /var/www/siddhantrangari && git pull origin main && npm run build && pm2 restart siddhantrangari"`
-- If workshop markdown files changed, recompile FIRST: `python3 projects/myagentfirm/workshop/assemble_workshop.py`
+- VPS path: `/var/www/movie-studio`
+- PM2 process name: `movie-studio`
+- Deploy command: `ssh vps "cd /var/www/movie-studio && git pull origin main && npm run build && pm2 restart movie-studio --update-env"`
 - The VPS uses a scoped SSH deploy key (`github.com-siddhantrangari` alias) — do NOT change global SSH config
 
 🚨 SSH SAFETY: Hostinger blocks IPs on repeated failed SSH attempts.

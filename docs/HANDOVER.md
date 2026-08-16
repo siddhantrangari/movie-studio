@@ -29,8 +29,11 @@ are in [docs/storage.md](storage.md).
   Mobile responsive, verified at 375px.
 - **GPU lifecycle UI** — a badge in the header shows GPU status and RunPod
   account balance; click it for a live-streaming provisioning log, cost
-  breakdown, and shut-down button. The run is detached from the HTTP request
-  (survives tab close/reload) — this part is proven.
+  breakdown, and shut-down button. Auto-polls status every 15s so it automatically
+  flips to READY when the pod finishes boot without needing a page refresh.
+- **Home dashboard generation progress** — generates clips with immediate
+  inline cards below the prompt area featuring pulsing shimmer status, elapsed time,
+  error boundaries, and instant in-place MP4 preview and download buttons upon completion.
 - **The three LTX 2.5 setup requirements**, when provisioning actually runs:
   1. ComfyUI must be **≥ v0.33.1** — v0.30.0's LTXV path only knows Gemma 3;
      LTX 2.5 uses Gemma 4 and fails with `not enough values to unpack

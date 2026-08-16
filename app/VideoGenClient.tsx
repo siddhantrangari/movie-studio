@@ -646,6 +646,124 @@ export default function VideoGenClient() {
                 </div>
               </div>
 
+              {/* ── Inline generation progress ── */}
+              {jobs.length > 0 && (
+                <div style={{ marginBottom: '2rem' }}>
+                  <style>{`
+                    @keyframes vg-shimmer {
+                      0%   { background-position: -400px 0; }
+                      100% { background-position:  400px 0; }
+                    }
+                    @keyframes vg-pulse-ring {
+                      0%   { box-shadow: 0 0 0 0   rgba(232,185,74,0.45); }
+                      70%  { box-shadow: 0 0 0 10px rgba(232,185,74,0);    }
+                      100% { box-shadow: 0 0 0 0   rgba(232,185,74,0);     }
+                    }
+                    .vg-generating { animation: vg-pulse-ring 1.6s ease-out infinite; }
+                  `}</style>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                    <h3 style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, margin: 0 }}>
+                      Generating
+                    </h3>
+                    <button
+                      onClick={() => setActiveTab('generations')}
+                      style={{ fontSize: '10px', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      View all →
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1rem' }}>
+                    {jobs.map(j => (
+                      <div
+                        key={j.id}
+                        className={j.state === 'queued' || j.state === 'running' ? 'vg-generating' : ''}
+                        style={{
+                          background: '#0e182e',
+                          border: `1px solid ${j.state === 'error' ? '#f87171' : j.state === 'done' ? '#4ade8044' : 'rgba(232,185,74,0.35)'}`,
+                          borderRadius: '0.75rem',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        {/* Thumbnail / video area */}
+                        {j.state === 'done' && j.filename ? (
+                          <video
+                            src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
+                            controls loop playsInline autoPlay muted
+                            style={{ width: '100%', height: '160px', objectFit: 'cover', background: '#000' }}
+                          />
+                        ) : j.state === 'error' ? (
+                          <div style={{ height: '160px', background: 'rgba(248,113,113,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+                            <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 700 }}>Generation failed</span>
+                            <span style={{ fontSize: '10px', color: '#64748b', maxWidth: '200px', textAlign: 'center' }}>{j.error}</span>
+                          </div>
+                        ) : (
+                          /* Shimmer + status */
+                          <div style={{
+                            height: '160px', position: 'relative', overflow: 'hidden',
+                            background: 'linear-gradient(90deg, #0e182e 0%, #121F35 50%, #0e182e 100%)',
+                            backgroundSize: '800px 100%',
+                            animation: 'vg-shimmer 2s infinite linear',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
+                          }}>
+                            <div style={{
+                              width: '44px', height: '44px', borderRadius: '50%',
+                              border: '3px solid rgba(232,185,74,0.2)',
+                              borderTop: '3px solid var(--gold)',
+                              animation: 'spin 1s linear infinite',
+                            }} />
+                            <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 700, letterSpacing: '0.06em' }}>
+                              {j.state === 'queued' ? 'QUEUED' : 'RENDERING…'}
+                            </span>
+                            <span style={{ fontSize: '10px', color: '#64748b' }}>
+                              {j.seconds}s clip · {Math.round((Date.now() - j.startedAt) / 1000)}s elapsed
+                            </span>
+                            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                          </div>
+                        )}
+
+                        {/* Label + prompt */}
+                        <div style={{ padding: '0.65rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{
+                              fontSize: '9px', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '9999px',
+                              background: j.state === 'done' ? '#4ade8022' : j.state === 'error' ? '#f8717122' : 'rgba(232,185,74,0.15)',
+                              color: j.state === 'done' ? '#4ade80' : j.state === 'error' ? '#f87171' : 'var(--gold)',
+                              textTransform: 'uppercase', letterSpacing: '0.06em',
+                            }}>
+                              {j.state}
+                            </span>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#F2F5FA', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {j.label}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '10px', color: '#64748b', margin: 0, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                            {j.prompt}
+                          </p>
+                        </div>
+
+                        {/* Download when done */}
+                        {j.state === 'done' && j.filename && (
+                          <div style={{ padding: '0 0.75rem 0.65rem', display: 'flex', gap: '0.5rem' }}>
+                            <a
+                              href={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
+                              download
+                              style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 800, borderRadius: '0.4rem', padding: '0.35rem', fontSize: '11px' }}
+                            >
+                              ⬇ Download MP4
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Published Projects & Showcase (SS4 Replacement) */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
