@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
-import { getJobStatus } from '@/lib/comfyui'
+import { getJobStatus, fetchVideo } from '@/lib/comfyui'
 import { getRunningPodId } from '@/lib/runpod'
 import { updateGenerationJob } from '@/lib/studio'
 import { logUsage } from '@/lib/usage'
+import { hasLocalClip, persistClip } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,21 @@ export async function GET(req: NextRequest) {
           subfolder: st.subfolder,
           error: st.error,
         })
+
+        if (st.state === 'done' && st.filename && !hasLocalClip(st.filename)) {
+          // Asynchronously cache the clip to persistent storage
+          fetchVideo(podId, st.filename, st.subfolder || 'gen')
+            .then(async (res) => {
+              if (res.ok && res.body) {
+                const arrayBuf = await res.arrayBuffer()
+                const buf = Buffer.from(arrayBuf)
+                if (buf.length > 0) {
+                  await persistClip(st.filename!, buf)
+                }
+              }
+            })
+            .catch(() => {})
+        }
 
         if (st.state === 'done' && updated) {
           const startedAt = updated.startedAt || updated.createdAt || Date.now() - 40000

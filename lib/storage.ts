@@ -56,7 +56,6 @@ export async function signedUrl(key: string, expiresIn = 3600): Promise<string |
     Bucket: r2.bucket,
     Key: key,
   })
-
   return getSignedUrl(r2.client, command, { expiresIn })
 }
 
@@ -70,4 +69,37 @@ export async function deleteFilmObject(key: string): Promise<void> {
       Key: key,
     })
   )
+}
+
+import path from 'path'
+
+export function getLocalClipPath(filename: string): string {
+  const dir = path.join(process.cwd(), 'data', 'films')
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+    } catch {
+      // directory exists or created
+    }
+  }
+  return path.join(dir, filename)
+}
+
+export function hasLocalClip(filename: string): boolean {
+  if (!filename) return false
+  const p = path.join(process.cwd(), 'data', 'films', filename)
+  return fs.existsSync(p) && fs.statSync(p).size > 0
+}
+
+export async function persistClip(filename: string, buffer: Buffer): Promise<string> {
+  const localPath = getLocalClipPath(filename)
+  fs.writeFileSync(localPath, buffer)
+  if (isR2Configured()) {
+    try {
+      await putFilm(filename, localPath)
+    } catch {
+      // ignore R2 upload failure if local save succeeded
+    }
+  }
+  return localPath
 }

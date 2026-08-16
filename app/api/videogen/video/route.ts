@@ -1,14 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server'
+import fs from 'fs'
+import path from 'path'
+import { Readable } from 'stream'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { fetchVideo } from '@/lib/comfyui'
 import { getRunningPodId } from '@/lib/runpod'
+import { getLocalClipPath, hasLocalClip, persistClip, signedUrl, isR2Configured } from '@/lib/storage'
 
 export const maxDuration = 60
+export const dynamic = 'force-dynamic'
+
+function serveStream(
+  filePath: string,
+  req: NextRequest,
+  filename: string,
+  download: boolean
+) {
+  const stat = fs.statSync(filePath)
+  const fileSize = stat.size
+  const range = req.headers.get('range')
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-')
+    const start = parseInt(parts[0], 10)
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+    const chunkSize = end - start + 1
+
+    const fileStream = fs.createReadStream(filePath, { start, end })
+    const webStream = Readable.toWeb(fileStream) as ReadableStream
+
+    const headers = new Headers({
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(chunkSize),
+      'Content-Type': 'video/mp4',
+      'Cache-Control': 'public, max-age=86400',
+    })
+    if (download) {
+      headers.set('Content-Disposition', `attachment; filename="${filename}"`)
+    }
+    return new NextResponse(webStream, { status: 206, headers })
+  }
+
+  const fileStream = fs.createReadStream(filePath)
+  const webStream = Readable.toWeb(fileStream) as ReadableStream
+  const headers = new Headers({
+    'Content-Length': String(fileSize),
+    'Accept-Ranges': 'bytes',
+    'Content-Type': 'video/mp4',
+    'Cache-Control': 'public, max-age=86400',
+  })
+  if (download) {
+    headers.set('Content-Disposition', `attachment; filename="${filename}"`)
+  }
+  return new NextResponse(webStream, { status: 200, headers })
+}
 
 /**
  * Streams a generated clip back through the app.
- * The browser can't hit the pod's /view directly — Cloudflare blocks it
- * without the right headers, and the pod URL changes every deploy.
+ * Automatically caches clips to persistent local disk & Cloudflare R2
+ * so clips remain permanently playable even when GPU compute nodes are turned off.
  */
 export async function GET(req: NextRequest) {
   if (!(await isAdminAuthenticated())) {
@@ -23,45 +74,61 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid filename' }, { status: 400 })
   }
 
-  const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
-  if (!podId) {
-    // Check local fallback in data/films or scratch/demo_assets
-    const fs = await import('fs')
-    const path = await import('path')
-    const localCandidates = [
-      path.join(process.cwd(), 'data', 'films', filename),
-      path.join(process.cwd(), 'data', 'films', 'df41a1d75641.mp4'),
-      path.join(process.cwd(), 'scratch', 'demo_assets', filename),
-      path.join(process.cwd(), 'showcase', 'minimax_hl3_demo_proof.mp4'),
-    ]
-    for (const p of localCandidates) {
-      if (fs.existsSync(p)) {
-        const stat = fs.statSync(p)
-        const stream = (await import('stream')).Readable.toWeb(fs.createReadStream(p)) as ReadableStream
-        const headers = new Headers({
-          'Content-Type': 'video/mp4',
-          'Content-Length': String(stat.size),
-          'Cache-Control': 'private, max-age=3600',
-        })
-        if (download) headers.set('Content-Disposition', `attachment; filename="${filename}"`)
-        return new NextResponse(stream, { status: 200, headers })
-      }
+  // 1. Check local persistent disk cache first (instant 0ms response)
+  if (hasLocalClip(filename)) {
+    const localPath = getLocalClipPath(filename)
+    return serveStream(localPath, req, filename, download)
+  }
+
+  // Check alternative local candidates
+  const localCandidates = [
+    path.join(process.cwd(), 'data', 'films', filename),
+    path.join(process.cwd(), 'scratch', 'demo_assets', filename),
+    path.join(process.cwd(), 'showcase', 'minimax_hl3_demo_proof.mp4'),
+  ]
+  for (const p of localCandidates) {
+    if (fs.existsSync(p) && fs.statSync(p).size > 0) {
+      return serveStream(p, req, filename, download)
     }
-    return NextResponse.json({ error: 'Pod not running and clip not cached locally' }, { status: 409 })
   }
 
-  const upstream = await fetchVideo(podId, filename, subfolder)
-  if (!upstream.ok || !upstream.body) {
-    return NextResponse.json({ error: `Clip not available (${upstream.status})` }, { status: 502 })
+  // 2. Check Cloudflare R2 if configured
+  if (isR2Configured()) {
+    try {
+      const url = await signedUrl(filename, 3600)
+      if (url) {
+        return NextResponse.redirect(url, { status: 307 })
+      }
+    } catch {
+      // Continue to pod fetch
+    }
   }
 
-  const headers = new Headers({
-    'Content-Type': 'video/mp4',
-    'Cache-Control': 'private, max-age=3600',
-  })
-  const len = upstream.headers.get('content-length')
-  if (len) headers.set('Content-Length', len)
-  if (download) headers.set('Content-Disposition', `attachment; filename="${filename}"`)
+  // 3. If pod is running, fetch from pod, persist to local disk, and stream
+  const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
+  if (podId) {
+    try {
+      const upstream = await fetchVideo(podId, filename, subfolder)
+      if (upstream.ok && upstream.body) {
+        const arrayBuf = await upstream.arrayBuffer()
+        const buf = Buffer.from(arrayBuf)
+        if (buf.length > 0) {
+          const savedPath = await persistClip(filename, buf)
+          return serveStream(savedPath, req, filename, download)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to proxy video from pod:', err)
+    }
+  }
 
-  return new NextResponse(upstream.body, { status: 200, headers })
+  // 4. Fallback if pod is offline and clip was not found
+  return NextResponse.json(
+    {
+      error: 'Clip not available. The GPU pod where this clip was rendered is currently stopped or offline.',
+      filename,
+      status: 'offline',
+    },
+    { status: 404 }
+  )
 }

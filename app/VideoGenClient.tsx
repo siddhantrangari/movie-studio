@@ -939,7 +939,7 @@ export default function VideoGenClient() {
                         {j.state === 'done' && j.filename ? (
                           <video
                             src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
-                            controls loop playsInline autoPlay muted
+                            controls loop playsInline autoPlay muted preload="metadata"
                             style={{ width: '100%', height: '160px', objectFit: 'cover', background: '#000' }}
                           />
                         ) : j.state === 'error' ? (
@@ -1135,7 +1135,7 @@ export default function VideoGenClient() {
                             {j.state === 'done' && j.filename ? (
                               <video
                                 src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
-                                controls loop playsInline
+                                controls loop playsInline preload="metadata"
                                 style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }}
                               />
                             ) : (
