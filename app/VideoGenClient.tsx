@@ -145,6 +145,7 @@ export default function VideoGenClient() {
   const { confirm: showConfirmModal, toast } = useToast()
   const [pods, setPods] = useState<{ ltx: PodData; minimax: PodData }>({ ltx: null, minimax: null })
   const [deploying, setDeploying] = useState<{ ltx25: boolean; minimax: boolean }>({ ltx25: false, minimax: false })
+  const [deployingTier, setDeployingTier] = useState<'standard' | 'ultra_4k' | null>(null)
   const [deployError, setDeployError] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
   const [actionLoading, setActionLoading] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
 
@@ -451,6 +452,7 @@ export default function VideoGenClient() {
   const deploy = async (model: Model, tier: 'standard' | 'ultra_4k' = selectedTier, terminatePodId?: string) => {
     const isLtx = model === 'ltx25'
     setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: true }))
+    setDeployingTier(tier)
     setDeployError(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: null }))
     try {
       const res = await fetch('/api/videogen/pod', {
@@ -467,6 +469,7 @@ export default function VideoGenClient() {
       setDeployError(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: (e as Error).message }))
     } finally {
       setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: false }))
+      setDeployingTier(null)
       setShow4kModal(false)
       setPromptDeployConflict(null)
     }
@@ -1712,7 +1715,7 @@ export default function VideoGenClient() {
                         color: '#93c5fd', fontWeight: 800, fontSize: '11px', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {deploying.ltx25 ? '⚡ Deploying...' : '🚀 Deploy Standard (24GB)'}
+                      {deployingTier === 'standard' ? '⏳ Deploying Standard (24GB)...' : '🚀 Deploy Standard (24GB)'}
                     </button>
                   </div>
 
@@ -1736,7 +1739,7 @@ export default function VideoGenClient() {
                         color: '#05080e', fontWeight: 900, fontSize: '11px', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {deploying.ltx25 ? '⚡ Deploying...' : '🔥 Deploy Ultra 4K (48GB+)'}
+                      {deployingTier === 'ultra_4k' ? '⏳ Deploying Ultra 4K (48GB+)...' : '🔥 Deploy Ultra 4K (48GB+)'}
                     </button>
                   </div>
                 </div>
