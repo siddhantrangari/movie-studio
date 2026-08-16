@@ -141,7 +141,7 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], audio: ['8b', 0], fps } },
     '10': {
       class_type: 'SaveVideo',
-      inputs: { video: ['9', 0], audio: ['8b', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
+      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
     },
   }
 
