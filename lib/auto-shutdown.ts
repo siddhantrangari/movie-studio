@@ -93,11 +93,17 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
           // Pod is verified completely idle for >= 5 minutes with 0 jobs -> auto-terminate to save billing!
           console.log(`[Auto-Shutdown] ⏱️ Pod ${podId} (${pod.name}) idle for ${Math.round(idleTimeMs / 1000)}s (threshold: ${autoShutdownMinutes}m). Terminating pod to prevent idle charges...`)
           await terminatePod(podId)
-          podLastActivity.delete(podId)
-          terminated.push(podId)
         } catch (err: any) {
-          // If ComfyUI is completely unreachable/dead and idle threshold exceeded, terminate
-          console.log(`[Auto-Shutdown] Pod ${podId} unreachable and idle for ${Math.round(idleTimeMs / 1000)}s. Terminating...`)
+          // If pod was booted recently (< 10 minutes), provisioning may still be in progress — do NOT terminate
+          const uptimeSec = Number((pod.runtime as { uptimeInSeconds?: number })?.uptimeInSeconds || 0)
+          if (uptimeSec < 600) {
+            console.log(`[Auto-Shutdown] Pod ${podId} is warming up/provisioning (uptime: ${uptimeSec}s). Keeping alive...`)
+            podLastActivity.set(podId, now)
+            continue
+          }
+
+          // If ComfyUI is completely unreachable/dead after 10m and idle threshold exceeded, terminate
+          console.log(`[Auto-Shutdown] Pod ${podId} unreachable and idle for ${Math.round(idleTimeMs / 1000)}s (uptime: ${uptimeSec}s). Terminating...`)
           await terminatePod(podId)
           podLastActivity.delete(podId)
           terminated.push(podId)
