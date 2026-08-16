@@ -22,20 +22,35 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
-POD_NAME="ltx25-videogen"
-VOLUME_NAME="ltx25-models"
-VOLUME_GB=60
+MODEL="${MODEL:-ltx25}"
+if [ "$MODEL" = "minimax" ] || [ "$MODEL" = "hl3" ] || [ "$MODEL" = "hailuo3" ]; then
+    MODEL="minimax"
+    POD_NAME="minimax-videogen"
+    VOLUME_NAME="minimax-h3-models"
+    SCRIPT_NAME="provision-minimax.sh"
+    GPUS=(
+        "NVIDIA RTX A6000"
+        "NVIDIA A40"
+        "NVIDIA L40S"
+        "NVIDIA A100 80GB PCIe"
+        "NVIDIA A100-SXM4-80GB"
+    )
+else
+    MODEL="ltx25"
+    POD_NAME="ltx25-videogen"
+    VOLUME_NAME="ltx25-models"
+    SCRIPT_NAME="provision-ltx25.sh"
+    GPUS=(
+        "NVIDIA GeForce RTX 3090"
+        "NVIDIA GeForce RTX 4090"
+        "NVIDIA RTX A6000"
+        "NVIDIA A40"
+        "NVIDIA L40S"
+    )
+fi
+VOLUME_GB=80
 TEMPLATE_ID="cw3nka7d08"          # RunPod official ComfyUI, CUDA 12.8
-STATE_FILE="$SCRIPT_DIR/.pod-state"
-
-# Cheapest first. LTX 2.5 int8 fits in 24GB.
-GPUS=(
-    "NVIDIA GeForce RTX 3090"
-    "NVIDIA GeForce RTX 4090"
-    "NVIDIA RTX A6000"
-    "NVIDIA A40"
-    "NVIDIA L40S"
-)
+STATE_FILE="$SCRIPT_DIR/.pod-state-$MODEL"
 
 REST="https://rest.runpod.io/v1"
 GQL="https://api.runpod.io/graphql"
@@ -160,7 +175,7 @@ cmd_up() {
         payload=$(python3 -c '
 import json, os
 hf_token = os.environ.get("HF_TOKEN", "")
-script_path = os.path.join("'"$SCRIPT_DIR"'", "provision-ltx25.sh")
+script_path = os.path.join("'"$SCRIPT_DIR"'", "'"$SCRIPT_NAME"'")
 with open(script_path, "r") as f:
     script = f.read()
 

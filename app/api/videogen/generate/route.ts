@@ -38,16 +38,17 @@ export async function POST(req: NextRequest) {
     prompt, seconds, width, height, seed, referenceStrength, negativePrompt,
     characterId, cameraMotion, lens, lighting, colorPalette, projectId, label,
   } = body
+  const model = body.model === 'minimax' ? 'minimax' : 'ltx25'
   let { referenceImage } = body
 
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
   }
 
-  const podId = await getRunningPodId('ltx25')
+  const podId = await getRunningPodId(model)
   if (!podId) {
     return NextResponse.json(
-      { error: 'LTX 2.5 pod is not running. Deploy or resume it first.' },
+      { error: `${model === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX 2.5'} pod is not running. Deploy or resume it first.` },
       { status: 409 }
     )
   }
@@ -73,6 +74,7 @@ export async function POST(req: NextRequest) {
   }
 
   const built = buildWorkflow({
+    model,
     prompt: composePrompt({ prompt, characterDescription, cameraMotion, lens, lighting, colorPalette }),
     negativePrompt,
     seconds: seconds ?? 4,
@@ -104,10 +106,10 @@ export async function POST(req: NextRequest) {
     logUsage({
       category: 'video_gen',
       type: 'clip_render',
-      model: 'LTX 2.5',
+      model: model === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX 2.5',
       durationSeconds: seconds ?? 4,
       costUsd: 0,
-      details: `Generated Clip: "${prompt.slice(0, 50)}..." (${built.width}x${built.height})`,
+      details: `Generated Clip (${model.toUpperCase()}): "${prompt.slice(0, 50)}..." (${built.width}x${built.height})`,
     })
 
     return NextResponse.json({

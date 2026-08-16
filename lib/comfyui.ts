@@ -44,6 +44,7 @@ export function podBase(podId: string) {
 }
 
 export type GenParams = {
+  model?: 'ltx25' | 'minimax'
   prompt: string
   negativePrompt?: string
   width?: number
@@ -68,7 +69,59 @@ export function framesForSeconds(seconds: number, fps: number) {
   return Math.max(9, Math.ceil((raw - 1) / 8) * 8 + 1)
 }
 
+export function buildMiniMaxWorkflow(p: GenParams) {
+  const width = p.width ?? 768
+  const height = p.height ?? 512
+  const fps = p.fps ?? 24
+  const frames = Math.max(16, Math.ceil((p.seconds ?? 5) * fps))
+  const seed = p.seed ?? Math.floor(Math.random() * 2 ** 31)
+  const negative = p.negativePrompt || DEFAULT_NEGATIVE
+
+  const wf: Record<string, unknown> = {
+    '1': { class_type: 'UNETLoader', inputs: { unet_name: 'minimax-h3-int8.safetensors', weight_dtype: 'default' } },
+    '2': { class_type: 'CLIPLoader', inputs: { clip_name: 't5xxl_fp8_e4m3fn.safetensors', type: 'minimax' } },
+    '3': { class_type: 'VAELoader', inputs: { vae_name: 'vae.safetensors' } },
+    '4': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: p.prompt } },
+    '5': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: negative } },
+    '6': { class_type: 'EmptyLatentVideo', inputs: { width, height, length: frames, batch_size: 1 } },
+    '7': {
+      class_type: 'KSampler',
+      inputs: {
+        model: ['1', 0],
+        positive: ['4', 0],
+        negative: ['5', 0],
+        latent_image: ['6', 0],
+        seed,
+        steps: 25,
+        cfg: 6.0,
+        sampler_name: 'euler',
+        scheduler: 'normal',
+        denoise: 1.0,
+      },
+    },
+    '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
+    '9': { class_type: 'CreateVideo', inputs: { images: ['8', 0], fps, audio: null } },
+    '10': {
+      class_type: 'SaveVideo',
+      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
+    },
+  }
+
+  if (p.referenceImage) {
+    wf['6a'] = { class_type: 'LoadImage', inputs: { image: p.referenceImage } }
+    wf['6'] = {
+      class_type: 'MiniMaxImgToVideo',
+      inputs: { image: ['6a', 0], width, height, length: frames, strength: p.referenceStrength ?? 0.85 },
+    }
+  }
+
+  return { workflow: wf, seed, length: frames, width, height, fps }
+}
+
 export function buildWorkflow(p: GenParams) {
+  if (p.model === 'minimax') {
+    return buildMiniMaxWorkflow(p)
+  }
   const width = p.width ?? 704
   const height = p.height ?? 384
   const fps = p.fps ?? 25

@@ -2,7 +2,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
-import { findPod, bringUp, tearDown, accountBalance, comfyReady } from '../lib/podops'
+import { findPod, bringUp, tearDown, stopPod, resumePod, accountBalance, comfyReady } from '../lib/podops'
+import { PodModel } from '../lib/runpod'
 import {
   getStoryboards,
   getStoryboard,
@@ -24,7 +25,7 @@ import { buildWorkflow, submitPrompt, uploadImageToPod } from '../lib/comfyui'
 const server = new Server(
   {
     name: 'movie-studio-mcp',
-    version: '1.1.0',
+    version: '1.2.0',
   },
   {
     capabilities: {
@@ -45,22 +46,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'movie_pod_status',
-        description: 'Check GPU pod status, ComfyUI availability, and RunPod account balance.',
+        description: 'Check GPU pod status for LTX 2.5 or MiniMax Hailuo 3, ComfyUI availability, and RunPod account balance.',
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            model: {
+              type: 'string',
+              enum: ['ltx25', 'minimax'],
+              description: 'Model pod to check: "ltx25" (LTX 2.5) or "minimax" (MiniMax Hailuo 3)',
+              default: 'ltx25',
+            },
+          },
         },
       },
       {
         name: 'movie_pod_start',
-        description: 'Start and provision an LTX 2.5 GPU pod on RunPod for video generation. Supports standard 24GB tier (RTX 3090/4090) and Ultra 4K tier (48GB/80GB A6000/A40/L40S/A100).',
+        description: 'Start and provision a GPU pod on RunPod for LTX 2.5 or MiniMax Hailuo 3. Supports standard 24GB tier (RTX 3090/4090) and Ultra 4K / 48GB+ tier (A6000/A40/L40S/A100).',
         inputSchema: {
           type: 'object',
           properties: {
+            model: {
+              type: 'string',
+              enum: ['ltx25', 'minimax'],
+              description: 'Target model: "ltx25" (LTX 2.5 Audio-Video) or "minimax" (MiniMax Hailuo 3 - requires 48GB+ VRAM)',
+              default: 'ltx25',
+            },
             tier: {
               type: 'string',
               enum: ['standard', 'ultra_4k'],
-              description: '"standard" (24GB VRAM RTX 3090/4090 for 720p/1080p) or "ultra_4k" (48GB/80GB VRAM A6000/A40/L40S/A100 required for raw 4K diffusion)',
+              description: '"standard" (24GB VRAM RTX 3090/4090 for 720p/1080p) or "ultra_4k" (48GB/80GB VRAM A6000/A40/L40S/A100)',
               default: 'standard',
             },
           },
@@ -68,10 +82,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'movie_pod_stop',
-        description: 'Terminate the GPU pod to stop billing.',
+        description: 'Stop or terminate the GPU pod to pause/stop billing.',
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            model: {
+              type: 'string',
+              enum: ['ltx25', 'minimax'],
+              description: 'Model pod to stop/terminate: "ltx25" or "minimax"',
+              default: 'ltx25',
+            },
+            action: {
+              type: 'string',
+              enum: ['stop', 'terminate'],
+              description: '"terminate" (stops all billing, deletes pod) or "stop" (pauses compute, keeps container disk)',
+              default: 'terminate',
+            },
+            podId: {
+              type: 'string',
+              description: 'Optional specific pod ID to stop/terminate',
+            },
+          },
+        },
+      },
+      {
+        name: 'movie_pod_resume',
+        description: 'Resume a stopped GPU pod on RunPod.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            podId: {
+              type: 'string',
+              description: 'Pod ID to resume',
+            },
+          },
+          required: ['podId'],
         },
       },
       {
@@ -145,12 +190,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'movie_generate_scene',
-        description: 'Trigger LTX 2.5 video clip workflow submission for a single scene with optional character consistency image seeding.',
+        description: 'Trigger video clip workflow submission for a single scene on LTX 2.5 or MiniMax Hailuo 3.',
         inputSchema: {
           type: 'object',
           properties: {
             storyboardId: { type: 'string' },
             sceneId: { type: 'string' },
+            model: {
+              type: 'string',
+              enum: ['ltx25', 'minimax'],
+              description: 'Model to use: "ltx25" (LTX 2.5) or "minimax" (MiniMax Hailuo 3)',
+              default: 'ltx25',
+            },
             characterId: { type: 'string', description: 'Character ID to seed reference portrait' },
             referenceStrength: { type: 'number', description: 'Strength of character reference image (0.0 to 1.0)', default: 0.85 },
             seed: { type: 'number' },
@@ -199,7 +250,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case 'movie_pod_status': {
-        const pod = await findPod()
+        const model = ((args as any)?.model || 'ltx25') as PodModel
+        const pod = await findPod(model)
         const bal = await accountBalance()
         const podId = (pod?.id as string) || null
         const ready = podId ? await comfyReady(podId) : false
@@ -208,38 +260,66 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ pod, podId, ready, balance: bal?.balance ?? null }, null, 2),
+              text: JSON.stringify({ model, pod, podId, ready, balance: bal?.balance ?? null }, null, 2),
             },
           ],
         }
       }
 
       case 'movie_pod_start': {
+        const model = ((args as any)?.model || 'ltx25') as PodModel
         const tier = (args as { tier?: 'standard' | 'ultra_4k' })?.tier || 'standard'
         let logs: string[] = []
-        for await (const line of bringUp(tier)) {
+        for await (const line of bringUp(tier, undefined, model)) {
           logs.push(`[${line.level.toUpperCase()}] ${line.text}`)
         }
         return {
           content: [
             {
               type: 'text',
-              text: logs.join('\n') || 'Pod startup process executed.',
+              text: logs.join('\n') || `${model.toUpperCase()} pod startup process executed.`,
             },
           ],
         }
       }
 
       case 'movie_pod_stop': {
+        const model = ((args as any)?.model || 'ltx25') as PodModel
+        const action = (args as any)?.action || 'terminate'
+        const podId = (args as any)?.podId
+        if (action === 'stop') {
+          const res = await stopPod(podId, model)
+          return {
+            content: [
+              {
+                type: 'text',
+                text: res.ok ? `${model.toUpperCase()} pod stopped.` : `Failed to stop: ${res.error}`,
+              },
+            ],
+          }
+        }
         let logs: string[] = []
-        for await (const line of tearDown()) {
+        for await (const line of tearDown(podId, model)) {
           logs.push(`[${line.level.toUpperCase()}] ${line.text}`)
         }
         return {
           content: [
             {
               type: 'text',
-              text: logs.join('\n') || 'GPU pod termination executed.',
+              text: logs.join('\n') || `${model.toUpperCase()} pod termination executed.`,
+            },
+          ],
+        }
+      }
+
+      case 'movie_pod_resume': {
+        const { podId } = args as any
+        const res = await resumePod(podId)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: res.ok ? `Pod ${podId} resumed.` : `Failed to resume: ${res.error}`,
             },
           ],
         }
@@ -335,7 +415,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'movie_generate_scene': {
-        const { storyboardId, sceneId, characterId, referenceStrength, seed } = args as any
+        const { storyboardId, sceneId, model, characterId, referenceStrength, seed } = args as any
+        const targetModel = (model === 'minimax' ? 'minimax' : 'ltx25') as PodModel
         const sb = getStoryboard(storyboardId)
         if (!sb) throw new Error(`Storyboard ${storyboardId} not found`)
         const sceneIdx = sb.scenes.findIndex((s) => s.id === sceneId)
@@ -345,9 +426,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const targetCharId = characterId || scene.characterId
         let referenceImageName: string | undefined
 
-        const pod = await findPod()
+        const pod = await findPod(targetModel)
         const podId = (pod?.id as string) || null
-        if (!podId) throw new Error('No active GPU pod found. Call movie_pod_start first.')
+        if (!podId) throw new Error(`No active ${targetModel.toUpperCase()} GPU pod found. Call movie_pod_start with model="${targetModel}" first.`)
 
         const allChars = getCharacters()
 
@@ -366,6 +447,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const dim = parseResolution(sb.resolution)
 
         const built = buildWorkflow({
+          model: targetModel,
           prompt: effectivePrompt,
           width: dim.width,
           height: dim.height,
@@ -384,7 +466,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ success: true, sceneId, promptId: prompt_id, referenceImage: referenceImageName }, null, 2),
+              text: JSON.stringify({ success: true, sceneId, promptId: prompt_id, model: targetModel, referenceImage: referenceImageName }, null, 2),
             },
           ],
         }

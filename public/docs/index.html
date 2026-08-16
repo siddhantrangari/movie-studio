@@ -423,21 +423,69 @@
       </div>
     </section>
 
+    <!-- Cost Breakdown Section -->
+    <section>
+      <h2 class="section-header">💰 Model Architecture & Generation Cost Comparison</h2>
+      <div class="card">
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
+          Studio supports dual open-weights video rendering pipelines with native on-demand GPU lifecycle and persistent model caching.
+        </p>
+        <table class="param-table">
+          <thead>
+            <tr>
+              <th>Model Pipeline</th>
+              <th>VRAM Required</th>
+              <th>Supported Hardware</th>
+              <th>Render Time (5s Clip)</th>
+              <th>Cost / 5s Clip</th>
+              <th>1-Min Film (12 clips)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>LTX 2.5</strong> (Native AV Diffusion)</td>
+              <td>24 GB</td>
+              <td>RTX 3090 / 4090 ($0.22 - $0.74/hr)</td>
+              <td>~50–70s</td>
+              <td><strong style="color: var(--green);">$0.004 – $0.007</strong></td>
+              <td>~$0.05 – $0.09</td>
+            </tr>
+            <tr>
+              <td><strong>MiniMax Hailuo 3</strong> (H3 INT8 DiT)</td>
+              <td>48 GB+</td>
+              <td>RTX A6000 / A40 / L40S / A100 ($0.33 - $1.19/hr)</td>
+              <td>~45–65s</td>
+              <td><strong style="color: var(--cyan);">$0.0045 – $0.015</strong></td>
+              <td>~$0.06 – $0.18</td>
+            </tr>
+            <tr>
+              <td><strong>AI Script Generator</strong> (GPT-5.6 Luna)</td>
+              <td>API ($0.60/$2.40 per 1M)</td>
+              <td>OpenAI GPT-5.6 Luna Engine</td>
+              <td>~3s</td>
+              <td><strong style="color: var(--gold);">&lt; $0.005</strong></td>
+              <td>~$0.005 (Full Script)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- End-to-End Autonomous Example -->
     <section>
       <h2 class="section-header">🤖 Complete Autonomous Pipeline Example</h2>
       
       <div class="card">
         <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
-          Here is how an AI agent uses the MCP server to produce a 1-minute sci-fi film from prompt to presigned R2 link:
+          Here is how an AI agent uses the MCP server to produce a 1-minute film using LTX 2.5 or MiniMax Hailuo 3:
         </p>
 
         <ol style="margin-left: 1.5rem; color: #cbd5e1; font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.75rem;">
-          <li><span class="step-number">1</span> Call <span class="inline-code">movie_pod_start</span> to spin up GPU pod on Secure Cloud.</li>
-          <li><span class="step-number">2</span> Call <span class="inline-code">movie_create_storyboard</span> with 12 scenes (5s each @ Max 1280x704 quality).</li>
-          <li><span class="step-number">3</span> Iterate through scenes calling <span class="inline-code">movie_generate_scene</span> to render clips on ComfyUI.</li>
+          <li><span class="step-number">1</span> Call <span class="inline-code">movie_pod_start</span> with <span class="inline-code">{"model": "minimax"}</span> or <span class="inline-code">{"model": "ltx25"}</span> to spin up GPU pod.</li>
+          <li><span class="step-number">2</span> Call <span class="inline-code">movie_create_storyboard</span> with 12 scenes (5s each @ Max quality).</li>
+          <li><span class="step-number">3</span> Iterate through scenes calling <span class="inline-code">movie_generate_scene</span> with <span class="inline-code">{"model": "minimax"}</span> to render clips on ComfyUI.</li>
           <li><span class="step-number">4</span> Call <span class="inline-code">movie_assemble_film</span> to mix narration, crossfade scenes, and upload to Cloudflare R2.</li>
-          <li><span class="step-number">5</span> Call <span class="inline-code">movie_pod_stop</span> to shut down GPU pod billing.</li>
+          <li><span class="step-number">5</span> Call <span class="inline-code">movie_pod_stop</span> with <span class="inline-code">{"action": "terminate"}</span> to shut down GPU pod billing.</li>
           <li><span class="step-number">6</span> Call <span class="inline-code">movie_get_film</span> to receive the 302 presigned Cloudflare R2 video URL.</li>
         </ol>
       </div>

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const model = process.env.OPENAI_MODEL || 'gpt-4o'
+  const model = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
   try {
     const { type, input, genre, cameraStyle, lightingStyle, durationSeconds = 10 } = await req.json()

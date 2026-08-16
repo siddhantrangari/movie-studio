@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
+import { POD_NAMES, VOLUME_NAMES, PodModel } from './runpod'
 
 /**
  * Pod lifecycle driven from the UI, emitting log lines as it goes.
@@ -19,8 +20,6 @@ import { execFileSync } from 'child_process'
  */
 
 const REST = 'https://rest.runpod.io/v1'
-const POD_NAME = 'ltx25-videogen'
-const VOLUME_NAME = 'ltx25-models'
 const TEMPLATE_ID = 'cw3nka7d08' // RunPod official ComfyUI, CUDA 12.8
 const KEY_DIR = path.join(process.cwd(), 'data', 'ssh')
 const KEY_PATH = path.join(KEY_DIR, 'pod_key')
@@ -66,7 +65,7 @@ export function bootCommand(): string {
   ].join('\n')
 }
 
-// Standard 24GB tier (cheap & fast for 720p/1080p)
+// Standard 24GB tier (cheap & fast for LTX 2.5 720p/1080p)
 export const STANDARD_GPUS = [
   'NVIDIA GeForce RTX 3090',
   'NVIDIA GeForce RTX 4090',
@@ -84,24 +83,37 @@ export const ULTRA_4K_GPUS = [
   'NVIDIA A100-SXM4-80GB',     // 80GB VRAM
 ]
 
+// MiniMax Hailuo 3 tier (48GB+ VRAM required for MiniMax H3 INT8 transformer)
+export const MINIMAX_GPUS = [
+  'NVIDIA RTX A6000',          // 48GB VRAM
+  'NVIDIA A40',                // 48GB VRAM
+  'NVIDIA L40S',               // 48GB VRAM
+  'NVIDIA A100 80GB PCIe',     // 80GB VRAM
+  'NVIDIA A100-SXM4-80GB',     // 80GB VRAM
+]
+
 export type GpuTier = 'standard' | 'ultra_4k'
 
 /**
  * Minimum download speed worth proceeding with, and only relevant on the
- * fallback path where there is no volume and the models must come down. A host
- * below this would spend longer downloading than the pod is worth; one was
- * measured at 0.43 MB/s, which works out to roughly a day for 37GB.
+ * fallback path where there is no volume and the models must come down.
  */
 const SPEED_FLOOR_MBPS = 30
 
 export type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
 
 /**
- * A lifecycle run, kept in module scope so it outlives the request that started
- * it. Closing the tab mid-provision used to abort a half-finished pod that was
- * still billing; now the work continues and any client can re-attach to the log.
+ * A lifecycle run, kept in module scope so it outlives the request that started it.
  */
-type Job = { id: string; action: string; tier?: GpuTier; lines: LogLine[]; running: boolean; startedAt: number }
+type Job = {
+  id: string
+  action: string
+  model?: PodModel
+  tier?: GpuTier
+  lines: LogLine[]
+  running: boolean
+  startedAt: number
+}
 let current: Job | null = null
 
 export type PodInfo = {
@@ -144,8 +156,8 @@ export async function listAllPods(): Promise<PodInfo[]> {
   })
 }
 
-export async function stopPod(podId?: string): Promise<{ ok: boolean; error?: string }> {
-  const targetId = podId || (await findPod())?.id
+export async function stopPod(podId?: string, model: PodModel = 'ltx25'): Promise<{ ok: boolean; error?: string }> {
+  const targetId = podId || (await findPod(model))?.id
   if (!targetId) return { ok: false, error: 'No pod found to stop' }
   const res = await api(`/pods/${targetId}/stop`, { method: 'POST' })
   return { ok: res.ok, error: res.error ? String(res.error) : undefined }
@@ -157,8 +169,8 @@ export async function resumePod(podId: string): Promise<{ ok: boolean; error?: s
   return { ok: res.ok, error: res.error ? String(res.error) : undefined }
 }
 
-export async function terminatePod(podId?: string): Promise<{ ok: boolean; error?: string }> {
-  const targetId = podId || (await findPod())?.id
+export async function terminatePod(podId?: string, model: PodModel = 'ltx25'): Promise<{ ok: boolean; error?: string }> {
+  const targetId = podId || (await findPod(model))?.id
   if (!targetId) return { ok: false, error: 'No pod found to terminate' }
   const res = await api(`/pods/${targetId}`, { method: 'DELETE' })
   return { ok: res.ok, error: res.error ? String(res.error) : undefined }
@@ -167,13 +179,15 @@ export async function terminatePod(podId?: string): Promise<{ ok: boolean; error
 /** Starts a run detached from the caller. Returns immediately. */
 export function startJob(
   action: 'up' | 'down' | 'stop' | 'start' | 'terminate',
-  options: { tier?: GpuTier; terminatePodId?: string; targetPodId?: string } = {}
+  options: { tier?: GpuTier; terminatePodId?: string; targetPodId?: string; model?: PodModel } = {}
 ): Job {
   if (current?.running) return current
   const tier = options.tier || 'standard'
+  const model = options.model || 'ltx25'
   const job: Job = {
     id: Math.random().toString(36).slice(2, 10),
     action,
+    model,
     tier,
     lines: [],
     running: true,
@@ -183,18 +197,18 @@ export function startJob(
   ;(async () => {
     try {
       if (action === 'up') {
-        for await (const line of bringUp(tier, options.terminatePodId)) {
+        for await (const line of bringUp(tier, options.terminatePodId, model)) {
           job.lines.push(line)
         }
       } else if (action === 'down' || action === 'terminate') {
-        for await (const line of tearDown(options.targetPodId)) {
+        for await (const line of tearDown(options.targetPodId, model)) {
           job.lines.push(line)
         }
       } else if (action === 'stop') {
-        job.lines.push({ level: 'info', text: `Stopping pod ${options.targetPodId || 'active'}...` })
-        const res = await stopPod(options.targetPodId)
+        job.lines.push({ level: 'info', text: `Stopping ${model.toUpperCase()} pod ${options.targetPodId || 'active'}...` })
+        const res = await stopPod(options.targetPodId, model)
         if (res.ok) {
-          job.lines.push({ level: 'ok', text: 'Pod stopped successfully. Compute billing paused.' })
+          job.lines.push({ level: 'ok', text: `${model.toUpperCase()} pod stopped successfully. Compute billing paused.` })
         } else {
           job.lines.push({ level: 'error', text: `Failed to stop: ${res.error || 'Unknown error'}` })
         }
@@ -333,23 +347,19 @@ export async function accountBalance(): Promise<{ balance: number; spendPerHr: n
   }
 }
 
-export async function findPod(): Promise<Record<string, unknown> | null> {
+export async function findPod(model: PodModel = 'ltx25'): Promise<Record<string, unknown> | null> {
   const { data } = await api('/pods')
   if (!Array.isArray(data)) return null
-  return data.find((p) => p.name === POD_NAME) ?? null
+  return data.find((p) => p.name === POD_NAMES[model]) ?? null
 }
 
 /**
  * The persistent model volume, if one exists.
- *
- * Without it the ~35GB of weights are re-downloaded on every single start —
- * which on a slow community host measured at under 1 MB/s. With it they are
- * downloaded once and every later start just mounts them.
  */
-export async function findVolume(): Promise<{ id: string; dataCenterId: string } | null> {
+export async function findVolume(model: PodModel = 'ltx25'): Promise<{ id: string; dataCenterId: string } | null> {
   const { data } = await api('/networkvolumes')
   if (!Array.isArray(data)) return null
-  const v = data.find((vol: { name?: string }) => vol.name === VOLUME_NAME)
+  const v = data.find((vol: { name?: string }) => vol.name === VOLUME_NAMES[model])
   return v?.id ? { id: String(v.id), dataCenterId: String(v.dataCenterId ?? '') } : null
 }
 
@@ -357,18 +367,22 @@ export async function findVolume(): Promise<{ id: string; dataCenterId: string }
  * Deploys a pod and provisions it, yielding progress as it goes.
  * Safe to call when a pod already exists — it reports and stops.
  */
-export async function* bringUp(tier: GpuTier = 'standard', terminatePodId?: string): AsyncGenerator<LogLine> {
+export async function* bringUp(
+  tier: GpuTier = 'standard',
+  terminatePodId?: string,
+  model: PodModel = 'ltx25'
+): AsyncGenerator<LogLine> {
   if (terminatePodId) {
     yield { level: 'info', text: `Terminating pod (${terminatePodId})...` }
-    await terminatePod(terminatePodId)
+    await terminatePod(terminatePodId, model)
     yield { level: 'ok', text: `Pod ${terminatePodId} terminated.` }
     await new Promise((r) => setTimeout(r, 2000))
   }
 
-  const existing = await findPod()
+  const existing = await findPod(model)
   if (existing && !terminatePodId) {
     const id = String(existing.id)
-    yield { level: 'ok', text: `Pod already running: ${id}` }
+    yield { level: 'ok', text: `${model.toUpperCase()} pod already running: ${id}` }
     if (await comfyReady(id)) {
       yield { level: 'ok', text: 'ComfyUI is already running and ready.' }
       yield { level: 'done', text: id }
@@ -379,36 +393,41 @@ export async function* bringUp(tier: GpuTier = 'standard', terminatePodId?: stri
     return
   }
 
-  const gpuList = tier === 'ultra_4k' ? ULTRA_4K_GPUS : STANDARD_GPUS
-  const tierName = tier === 'ultra_4k' ? 'Ultra 4K Tier (48GB/80GB)' : 'Standard Tier (24GB)'
+  const isMiniMax = model === 'minimax'
+  const gpuList = isMiniMax
+    ? MINIMAX_GPUS
+    : tier === 'ultra_4k'
+      ? ULTRA_4K_GPUS
+      : STANDARD_GPUS
+
+  const modelTitle = isMiniMax ? 'MiniMax Hailuo 3 (48GB+)' : (tier === 'ultra_4k' ? 'LTX 2.5 Ultra 4K (48GB/80GB)' : 'LTX 2.5 Standard (24GB)')
+  const podName = POD_NAMES[model]
+  const scriptFileName = isMiniMax ? 'provision-minimax.sh' : 'provision-ltx25.sh'
 
   const pubkey = ensureKeypair()
-  yield { level: 'info', text: `Deploying ${tierName} GPU pod...` }
+  yield { level: 'info', text: `Deploying ${modelTitle} GPU pod...` }
 
   let provisionScript = ''
   try {
-    provisionScript = fs.readFileSync(path.join(process.cwd(), 'scripts', 'provision-ltx25.sh'), 'utf8')
+    provisionScript = fs.readFileSync(path.join(process.cwd(), 'scripts', scriptFileName), 'utf8')
   } catch (e) {
     yield { level: 'error', text: `Could not read provisioning script: ${(e as Error).message}` }
     return
   }
 
-  const volume = await findVolume()
+  const volume = await findVolume(model)
   if (volume) {
     yield {
       level: 'ok',
-      text: `Using the ltx25-models volume in ${volume.dataCenterId} — models that are already there won't be downloaded again.`,
+      text: `Using the ${VOLUME_NAMES[model]} volume in ${volume.dataCenterId} — models will persist.`,
     }
   } else {
     yield {
       level: 'warn',
-      text: 'No ltx25-models volume found, so ~35GB will be downloaded onto this pod and lost when it is terminated.',
+      text: `No ${VOLUME_NAMES[model]} volume found, weights will be downloaded to container disk.`,
     }
   }
 
-  // A community host can be structurally broken — GPU present but unusable.
-  // The provisioning script detects that in seconds, so a couple of retries
-  // costs cents and turns an unrecoverable failure into a slow success.
   const MAX_HOSTS = 3
   for (let attempt = 1; attempt <= MAX_HOSTS; attempt++) {
     let podId = ''
@@ -416,37 +435,32 @@ export async function* bringUp(tier: GpuTier = 'standard', terminatePodId?: stri
 
     for (const gpu of gpuList) {
       yield { level: 'info', text: `Requesting ${gpu}…` }
+      const envObj: Record<string, string> = {
+        HF_TOKEN: process.env.HF_TOKEN ?? '',
+        PUBLIC_KEY: pubkey,
+        PROVISION_SCRIPT: provisionScript,
+        PROBE_SPEED: volume ? '0' : '1',
+        SPEED_FLOOR_MBPS: String(SPEED_FLOOR_MBPS),
+      }
+      if (isMiniMax) {
+        envObj.download_minimax_h3 = 'true'
+        envObj.minimax_quant = 'int8'
+      }
+
       const body: Record<string, unknown> = {
-        name: POD_NAME,
+        name: podName,
         templateId: TEMPLATE_ID,
         gpuTypeIds: [gpu],
         gpuCount: 1,
-        // The weights live on the network volume when there is one, so the
-        // container disk only has to hold the image itself.
         containerDiskInGb: volume ? 50 : 100,
-        // Network volumes only exist in Secure Cloud — asking for COMMUNITY
-        // with one attached returns "no instances available" for every GPU.
-        // Secure costs more per hour but is also where the flaky community
-        // hosts (dead CUDA, sub-1MB/s links) stop being a problem.
         cloudType: volume ? 'SECURE' : 'COMMUNITY',
         ports: PORTS,
-        env: {
-          HF_TOKEN: process.env.HF_TOKEN ?? '',
-          PUBLIC_KEY: pubkey,
-          PROVISION_SCRIPT: provisionScript,
-          // With a volume the models are already there, so there is nothing to
-          // measure. Without one this is the fallback path onto Community,
-          // where bandwidth decides whether the host is worth keeping.
-          PROBE_SPEED: volume ? '0' : '1',
-          SPEED_FLOOR_MBPS: String(SPEED_FLOOR_MBPS),
-        },
+        env: envObj,
         dockerEntrypoint: ['/bin/bash', '-c'],
         dockerStartCmd: [bootCommand()],
       }
       if (volume) {
         body.networkVolumeId = volume.id
-        // /workspace is where the image puts ComfyUI and its models, so
-        // mounting there is what makes both survive termination.
         body.volumeMountPath = '/workspace'
       }
 
@@ -484,11 +498,7 @@ export async function* bringUp(tier: GpuTier = 'standard', terminatePodId?: stri
 
 /**
  * Tails the pod's provisioning log until the models are down and ComfyUI is up.
- *
- * ComfyUI now starts while the downloads are still running, so it answering is
- * no longer the finish line — the script's own PROVISION_EXIT marker is.
  */
-/** Lets the caller distinguish "this host is dead" from ordinary failure. */
 type Outcome = { hostBroken?: boolean }
 
 async function* awaitProvisioning(
@@ -519,14 +529,11 @@ async function* awaitProvisioning(
         sawLog = true
         yield { level: 'ok', text: 'Provisioning script is running on the pod.' }
       }
-      // The last line may still be mid-write, so hold it until more arrives.
       const lines = log.split('\n')
       let failed = false
       while (emitted < lines.length - 1) {
         const text = lines[emitted++].trimEnd()
         if (!text) continue
-        // Phase markers are plumbing between the boot script and this loop —
-        // read them for state, but don't show them.
         if (text.includes('GPU_BROKEN') || text.includes('HOST_SLOW')) outcome.hostBroken = true
         const marker = /(?:PROVISION|CODE)_EXIT=(\d+)/.exec(text)
         if (marker) {
@@ -566,10 +573,10 @@ async function* awaitProvisioning(
   yield { level: 'warn', text: 'Timed out after 30 min. The pod is still up and billing — inspect it or shut it down.' }
 }
 
-export async function* tearDown(targetPodId?: string): AsyncGenerator<LogLine> {
-  const pod = targetPodId ? { id: targetPodId } : await findPod()
+export async function* tearDown(targetPodId?: string, model: PodModel = 'ltx25'): AsyncGenerator<LogLine> {
+  const pod = targetPodId ? { id: targetPodId } : await findPod(model)
   if (!pod?.id) {
-    yield { level: 'ok', text: 'No pod found — nothing is billing.' }
+    yield { level: 'ok', text: `No ${model.toUpperCase()} pod found — nothing is billing.` }
     yield { level: 'done', text: '' }
     return
   }

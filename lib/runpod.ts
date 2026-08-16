@@ -5,6 +5,11 @@ export const POD_NAMES = {
   minimax: 'minimax-h3-videogen',
 } as const
 
+export const VOLUME_NAMES = {
+  ltx25: 'ltx25-models',
+  minimax: 'minimax-h3-models',
+} as const
+
 export type PodModel = keyof typeof POD_NAMES
 
 export function runpodHeaders() {

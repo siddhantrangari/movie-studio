@@ -62,21 +62,30 @@ export function logUsage(record: Omit<UsageRecord, 'id' | 'timestamp'>): UsageRe
  * Default pricing (gpt-4o standard: $2.50 / 1M prompt tokens, $10.00 / 1M completion tokens)
  */
 export function estimateOpenAiCost(model: string, promptTokens: number, completionTokens: number): number {
-  let promptPricePerM = 2.50
-  let compPricePerM = 10.00
+  let promptPricePerM = 0.60
+  let compPricePerM = 2.40
 
-  if (model.includes('o1-mini') || model.includes('o3-mini')) {
-    promptPricePerM = 1.10
-    compPricePerM = 4.40
-  } else if (model.includes('o1')) {
-    promptPricePerM = 15.00
-    compPricePerM = 60.00
-  } else if (model.includes('gpt-4.5')) {
-    promptPricePerM = 75.00
-    compPricePerM = 150.00
-  } else if (model.includes('gpt-4o-mini')) {
+  const m = (model || process.env.OPENAI_MODEL || '').toLowerCase()
+
+  if (m.includes('5.6') || m.includes('luna')) {
+    // GPT-5.6 Luna pricing ($0.60 / 1M prompt, $2.40 / 1M completion)
+    promptPricePerM = Number(process.env.OPENAI_PROMPT_PRICE_PER_M || 0.60)
+    compPricePerM = Number(process.env.OPENAI_COMPLETION_PRICE_PER_M || 2.40)
+  } else if (m.includes('gpt-4o-mini')) {
     promptPricePerM = 0.15
     compPricePerM = 0.60
+  } else if (m.includes('o1-mini') || m.includes('o3-mini')) {
+    promptPricePerM = 1.10
+    compPricePerM = 4.40
+  } else if (m.includes('o1')) {
+    promptPricePerM = 15.00
+    compPricePerM = 60.00
+  } else if (m.includes('gpt-4.5')) {
+    promptPricePerM = 75.00
+    compPricePerM = 150.00
+  } else if (m.includes('gpt-4o')) {
+    promptPricePerM = 2.50
+    compPricePerM = 10.00
   }
 
   const cost = (promptTokens / 1_000_000) * promptPricePerM + (completionTokens / 1_000_000) * compPricePerM

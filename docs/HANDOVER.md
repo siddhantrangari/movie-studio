@@ -311,6 +311,34 @@ path — `data/ssh/pod_key`, unused now but left in place).
 - Balance is shown live in the UI (header badge + panel), pulled from
   RunPod's GraphQL `clientBalance` each poll.
 
+## Video Model Architecture & Per-Generation Costs
+
+The studio supports two state-of-the-art open-weights video generation pipelines:
+
+### 1. Model Comparison & VRAM Requirements
+
+| Pipeline | Model Architecture | Recommended Hardware | VRAM Needed | Generation Speed (5s scene) | Cost per 5s Clip |
+|---|---|---|---|---|---|
+| **LTX 2.5** | LTX-Video 2.5 (Audio-Video Diffusion) | RTX 3090 / RTX 4090 | **24 GB** | ~50–70s | **$0.004 – $0.007** |
+| **MiniMax Hailuo 3** | MiniMax H3 DiT (INT8 Quantized) | RTX A6000 / A40 / L40S / A100 | **48 GB+** | ~45–65s | **$0.0045 – $0.015** |
+
+### 2. End-to-End Cost Breakdown
+
+#### Video Clip & Film Generation
+- **LTX 2.5 (RTX 3090 @ $0.22/hr)**:
+  - 1 scene (5 seconds @ 1280x704): **$0.0043** (~70 seconds)
+  - 1-minute full film (12 scenes @ 5s): **$0.051** (approx 14 mins total render)
+  - Volume storage (`ltx25-models`, 60GB): **$4.20 / month** ($0.07/GB/mo)
+- **MiniMax Hailuo 3 (RTX A6000 @ $0.33/hr)**:
+  - 1 scene (5 seconds @ 768x512): **$0.0046** (~50 seconds)
+  - 1-minute full film (12 scenes @ 5s): **$0.055** (approx 10 mins total render)
+  - Volume storage (`minimax-h3-models`, 80GB): **$5.60 / month** ($0.07/GB/mo)
+
+#### AI Script & Prompt Generation (`OPENAI_MODEL=gpt-5.6-luna`)
+- **Token Rates**: **$0.60 / 1M prompt tokens**, **$2.40 / 1M completion tokens**.
+- **Per-Story Script Cost**: **~$0.003 – $0.005** (under half a cent for a full 15-scene screenplay with camera moves, lighting, and dialogue).
+- **Monthly Token Forecaster**: 4.63M tokens costs **~$5.70 / month**.
+
 ---
 
 ## Deploy
@@ -328,10 +356,10 @@ Health check: `curl -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/admin/v
 `.env.production` on the VPS (gitignored):
 ```
 RUNPOD_API_KEY=...
-HF_TOKEN=...          # required — LTX 2.5 repo is gated
+HF_TOKEN=...          # required for gated weights
 ELEVENLABS_API_KEY=...
 OPENAI_API_KEY=...    # required for AI Cinematic Prompt Generator
-OPENAI_MODEL=gpt-4o   # or custom model string
+OPENAI_MODEL=gpt-5.6-luna
 ADMIN_PASSWORD_HASH=...
 JWT_SECRET=...
 PORT=3000
@@ -343,14 +371,7 @@ PORT=3000
 
 - Log in at `/admin/login`, password is the one behind `ADMIN_PASSWORD_HASH`.
 - **Before starting a pod**, check `curl -s -X POST https://api.runpod.io/graphql -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" -d '{"query":"query { myself { clientBalance pods { id } } }"}'`
-  to confirm no pod is already running from a previous session — several
-  today were left running by interrupted test runs.
-- `npm run pod up` / `down` / `status` drives the exact `lib/podops.ts` code
-  path the UI uses, straight from the terminal with streaming logs. Use it to
-  test provisioning without clicking through the app — and **always** follow up
-  with `npm run pod down`.
-- To get a root shell on any running pod without SSH, see
-  [Jupyter is wide open](#useful-jupyter-is-wide-open). Invaluable for
-  inspecting a pod mid-provision.
-- The LTX 2.5 pipeline behind provisioning is solid — it doesn't need
-  re-proving, only re-reaching.
+  to confirm no pod is already running from a previous session.
+- `MODEL=minimax npm run pod up` or `MODEL=ltx25 npm run pod up` drives the exact `lib/podops.ts` code path the UI uses.
+- In the web app, toggle between **🎬 LTX 2.5 (24GB)** and **⚡ MiniMax Hailuo 3 (48GB+)** in the header pod control panel.
+- Both models are also fully exposed via Model Context Protocol (MCP) in `mcp/server.ts` via `movie_pod_start`, `movie_pod_status`, `movie_pod_stop`, and `movie_generate_scene`.

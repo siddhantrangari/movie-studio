@@ -2,15 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
 import { startJob, currentJob, findPod, listAllPods, accountBalance, type LogLine } from '@/lib/podops'
 
+import { PodModel } from '@/lib/runpod'
+
 // Bringing a pod up includes a ~4 minute download.
 export const maxDuration = 900
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const [pod, allPods, account] = await Promise.all([findPod(), listAllPods(), accountBalance()])
+  const model = (req.nextUrl.searchParams.get('model') || 'ltx25') as PodModel
+  const [pod, allPods, account] = await Promise.all([findPod(model), listAllPods(), accountBalance()])
   const job = currentJob()
 
   const gpu = Number(pod?.costPerHr ?? 0)
@@ -18,6 +21,7 @@ export async function GET() {
   const storage = (diskGb * 0.1) / 730
 
   return NextResponse.json({
+    model,
     pod: pod
       ? {
           id: pod.id,
@@ -35,7 +39,7 @@ export async function GET() {
     pods: allPods,
     account,
     // Lets a reloaded page re-attach to a run already in flight.
-    job: job ? { running: job.running, action: job.action, lines: job.lines, tier: job.tier } : null,
+    job: job ? { running: job.running, action: job.action, lines: job.lines, tier: job.tier, model: job.model } : null,
   })
 }
 
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { action, tier, terminatePodId, targetPodId } = await req.json()
+  const { action, tier, model, terminatePodId, targetPodId } = await req.json()
   const validActions = ['up', 'down', 'stop', 'start', 'terminate']
   if (!validActions.includes(action)) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
@@ -56,7 +60,9 @@ export async function POST(req: NextRequest) {
 
   // The run itself is detached, so navigating away no longer strands a
   // half-provisioned pod that is still billing. This response just tails it.
+  const targetModel = (model === 'minimax' ? 'minimax' : 'ltx25') as PodModel
   const job = startJob(action as 'up' | 'down' | 'stop' | 'start' | 'terminate', {
+    model: targetModel,
     tier: tier || 'standard',
     terminatePodId,
     targetPodId,

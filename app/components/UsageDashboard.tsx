@@ -203,7 +203,7 @@ export default function UsageDashboard() {
   const simHourlyRate = simTier === 'ultra_4k' ? 1.64 : 0.34
   const simTotalGpuHours = Number(((simClips * simRenderSecondsPerClip) / 3600).toFixed(1))
   const simMonthlyGpuCost = Number((simTotalGpuHours * simHourlyRate).toFixed(2))
-  const simMonthlyAiCost = Number((simClips * (unitEco?.avgPromptCostPerGen ?? 0.0018)).toFixed(2))
+  const simMonthlyAiCost = Number((simClips * (unitEco?.avgPromptCostPerGen ?? 0.0022)).toFixed(2))
   const simTotalMonthlyCost = Number((simMonthlyGpuCost + simMonthlyAiCost).toFixed(2))
   const simCostPerClip = Number((simTotalMonthlyCost / Math.max(1, simClips)).toFixed(4))
   const simCostPer1Min = Number((simCostPerClip * 10).toFixed(3))
@@ -489,7 +489,7 @@ export default function UsageDashboard() {
               ${simMonthlyAiCost.toLocaleString()}
             </div>
             <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '0.2rem' }}>
-              ~{((simClips * 1850) / 1000000).toFixed(2)}M OpenAI tokens
+              ~{((simClips * 1850) / 1000000).toFixed(2)}M GPT-5.6 Luna tokens
             </div>
           </div>
 

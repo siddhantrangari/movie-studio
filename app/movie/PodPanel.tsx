@@ -19,6 +19,7 @@ const LEVEL_COLOR: Record<string, string> = {
 
 export default function PodPanel({ onPodChange }: { onPodChange?: (running: boolean) => void }) {
   const { confirm: showConfirmModal, toast } = useToast()
+  const [model, setModel] = useState<'ltx25' | 'minimax'>('ltx25')
   const [pod, setPod] = useState<Pod>(null)
   const [account, setAccount] = useState<{ balance: number; spendPerHr: number } | null>(null)
   const [logs, setLogs] = useState<LogLine[]>([])
@@ -29,13 +30,13 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   const wrapRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
-    const r = await fetch('/api/videogen/pod', { cache: 'no-store' })
+    const r = await fetch(`/api/videogen/pod?model=${model}`, { cache: 'no-store' })
     if (!r.ok) return
     const d = await r.json()
     setPod(d.pod)
     setAccount(d.account ?? null)
     onPodChange?.(d.pod?.status === 'RUNNING')
-  }, [onPodChange])
+  }, [model, onPodChange])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -55,12 +56,13 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   const executeRun = async (action: 'up' | 'down') => {
     setBusy(true)
     setOpen(true)
-    setLogs([{ level: 'info', text: action === 'up' ? `Starting ${tier === 'ultra_4k' ? 'Ultra 4K (48GB+)' : 'Standard (24GB)'} GPU…` : 'Shutting down…' }])
+    const modelLabel = model === 'minimax' ? 'MiniMax Hailuo 3 (48GB+)' : (tier === 'ultra_4k' ? 'LTX 2.5 Ultra 4K (48GB+)' : 'LTX 2.5 Standard (24GB)')
+    setLogs([{ level: 'info', text: action === 'up' ? `Starting ${modelLabel} GPU…` : `Shutting down ${model.toUpperCase()}…` }])
     try {
       const res = await fetch('/api/videogen/pod', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, tier }),
+        body: JSON.stringify({ action, tier, model }),
       })
       if (!res.body) throw new Error('No response stream')
 
@@ -81,7 +83,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
             if (line.level === 'done') {
               setBusy(false)
               refresh()
-              toast.success(action === 'up' ? 'GPU Pod ready!' : 'Pod terminated.')
+              toast.success(action === 'up' ? `${model === 'minimax' ? 'MiniMax HL3' : 'LTX 2.5'} Pod ready!` : 'Pod terminated.')
             } else {
               setLogs((prev) => [...prev, line])
             }
@@ -99,8 +101,8 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   const run = (action: 'up' | 'down') => {
     if (action === 'down') {
       showConfirmModal({
-        title: 'Terminate GPU Pod',
-        message: 'Terminate the GPU pod and stop all hourly billing? Generated clips still on this pod will be cleaned up.',
+        title: `Terminate ${model === 'minimax' ? 'MiniMax HL3' : 'LTX 2.5'} GPU Pod`,
+        message: `Terminate the ${model.toUpperCase()} GPU pod and stop all hourly billing? Generated clips still on this pod will be cleaned up.`,
         confirmText: '🛑 Terminate Pod',
         type: 'danger',
         onConfirm: () => executeRun('down'),
@@ -111,7 +113,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
   }
 
   const running = pod?.status === 'RUNNING'
-  const label = busy ? 'GPU WORKING' : running ? 'GPU READY' : 'GPU OFFLINE'
+  const label = busy ? 'GPU WORKING' : running ? `${model === 'minimax' ? 'HL3' : 'LTX'} READY` : 'GPU OFFLINE'
   const tone = busy ? GOLD : running ? '#4ade80' : '#f87171'
 
   // Close when clicking outside, the way a menu should behave.
@@ -126,8 +128,6 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
-      {/* Anchors to the right on desktop, but the badge sits near the left edge
-          on a phone, where right-anchoring pushes the panel off-screen. */}
       <style>{`
         .ms-pop { right: 0; }
         @media (max-width: 640px) { .ms-pop { right: auto; left: 0; } }
@@ -153,14 +153,44 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
       {open && (
         <div className="ms-pop" style={{
           position: 'absolute', top: 'calc(100% + 8px)', zIndex: 60,
-          width: 'min(420px, calc(100vw - 2rem))',
+          width: 'min(440px, calc(100vw - 2rem))',
           background: CARD, border: `1px solid ${LINE}`, borderRadius: '0.75rem',
           padding: '1rem', boxShadow: '0 18px 50px rgba(0,0,0,0.55)',
         }}>
+          {/* Model Switcher Tabs */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem',
+            padding: '0.25rem', marginBottom: '0.75rem', borderRadius: '0.5rem',
+            background: '#070c14', border: `1px solid ${LINE}`,
+          }}>
+            <button
+              onClick={() => { setModel('ltx25'); }}
+              style={{
+                padding: '0.4rem', borderRadius: '0.35rem', border: 'none',
+                background: model === 'ltx25' ? GOLD : 'transparent',
+                color: model === 'ltx25' ? '#070c14' : '#94a3b8',
+                fontSize: '11px', fontWeight: 800, cursor: 'pointer',
+              }}
+            >
+              🎬 LTX 2.5 (24GB)
+            </button>
+            <button
+              onClick={() => { setModel('minimax'); }}
+              style={{
+                padding: '0.4rem', borderRadius: '0.35rem', border: 'none',
+                background: model === 'minimax' ? '#38bdf8' : 'transparent',
+                color: model === 'minimax' ? '#070c14' : '#94a3b8',
+                fontSize: '11px', fontWeight: 800, cursor: 'pointer',
+              }}
+            >
+              ⚡ MiniMax Hailuo 3 (48GB+)
+            </button>
+          </div>
+
           {pod && running ? (
             <div style={{ fontSize: '11px', color: GREY, marginBottom: '0.75rem', lineHeight: 1.7 }}>
               <div title={`GPU $${pod.costPerHr}/hr + ${pod.diskGb}GB storage $${pod.storagePerHr}/hr`}>
-                <strong style={{ color: '#F2F5FA' }}>${pod.totalPerHr}/hr</strong> billing now
+                <strong style={{ color: '#F2F5FA' }}>${pod.totalPerHr}/hr</strong> ({model.toUpperCase()}) billing now
                 <span style={{ color: '#64748b' }}> · GPU ${pod.costPerHr} + disk ${pod.storagePerHr}</span>
               </div>
               <a href={pod.comfyui} target="_blank" rel="noopener" style={{ color: GOLD, fontWeight: 600 }}>Open ComfyUI ↗</a>
@@ -170,7 +200,9 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
           ) : (
             <p style={{ fontSize: '11px', color: GREY, lineHeight: 1.6, marginBottom: '0.75rem' }}>
               {busy ? 'Working — you can close this, it keeps running.'
-                    : 'Nothing is billing. Starting takes about 5 minutes, mostly downloading models.'}
+                    : model === 'minimax'
+                      ? 'MiniMax Hailuo 3 offline. Uses 48GB+ VRAM GPUs (A6000, A40, L40S, A100).'
+                      : 'LTX 2.5 offline. Uses 24GB+ VRAM GPUs (RTX 3090/4090). Starting takes ~1–4 min.'}
             </p>
           )}
 
@@ -186,7 +218,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
                 {(() => {
                   const rate = pod && running && pod.totalPerHr > 0
                     ? pod.totalPerHr
-                    : (account.spendPerHr > 0.1 ? account.spendPerHr : (pod?.totalPerHr || 0.69))
+                    : (account.spendPerHr > 0.1 ? account.spendPerHr : (pod?.totalPerHr || (model === 'minimax' ? 0.45 : 0.69)))
                   if (!rate || rate <= 0) return null
                   const hoursLeft = account.balance / rate
                   return (
@@ -199,7 +231,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
             </div>
           )}
 
-          {!running && (
+          {!running && model === 'ltx25' && (
             <div style={{
               display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0.6rem',
               marginBottom: '0.75rem', borderRadius: '0.4rem', background: '#070c14', border: `1px solid ${LINE}`,
@@ -216,14 +248,26 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
             </div>
           )}
 
+          {!running && model === 'minimax' && (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.5rem 0.6rem',
+              marginBottom: '0.75rem', borderRadius: '0.4rem', background: '#070c14', border: `1px solid ${LINE}`,
+            }}>
+              <span style={{ fontSize: '9.5px', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase' }}>MiniMax HL3 Hardware:</span>
+              <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                Allocating <strong>48GB/80GB VRAM</strong> (NVIDIA RTX A6000, A40, L40S, A100)
+              </span>
+            </div>
+          )}
+
           <button onClick={() => run(running ? 'down' : 'up')} disabled={busy}
             style={{
               width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: 'none',
-              background: busy ? LINE : running ? 'rgba(248,113,113,0.12)' : GOLD,
+              background: busy ? LINE : running ? 'rgba(248,113,113,0.12)' : (model === 'minimax' ? '#38bdf8' : GOLD),
               color: busy ? '#64748b' : running ? '#f87171' : '#0A1220',
               fontSize: '12px', fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer',
             }}>
-            {busy ? 'Working…' : running ? 'Shut down GPU' : `Start ${tier === 'ultra_4k' ? 'Ultra 4K (48GB+)' : 'Standard (24GB)'} GPU`}
+            {busy ? 'Working…' : running ? `Shut down ${model.toUpperCase()} GPU` : `Start ${model === 'minimax' ? 'MiniMax HL3 (48GB+)' : (tier === 'ultra_4k' ? 'LTX 2.5 Ultra 4K' : 'LTX 2.5 (24GB)')} GPU`}
           </button>
 
           {logs.length > 0 && (
