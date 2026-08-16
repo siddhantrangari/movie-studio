@@ -57,6 +57,13 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
 
     for (const pod of activePods) {
       const podId = String(pod.id)
+      const podName = String(pod.name || '').toLowerCase()
+
+      // Seeder pods manage their own lifecycle and must not be killed during multi-gigabyte downloads
+      if (podName.includes('seeder') || podName.includes('seed')) {
+        continue
+      }
+
       const now = Date.now()
 
       // If we don't have an activity record yet, initialize it to now to give it a full 5-minute window

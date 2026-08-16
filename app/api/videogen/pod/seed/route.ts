@@ -160,14 +160,16 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < MAX_TRIES; i++) {
           await new Promise((r) => setTimeout(r, 10_000))
 
-          // Check pod is still alive
-          const { data: podData } = await rpApi(`/pods/${podId}`)
-          const status = String(podData?.desiredStatus ?? podData?.status ?? '')
-          if (status && !['RUNNING', 'PENDING', ''].includes(status)) {
-            if (!seedComplete) {
-              send('warn', `⚠ Pod entered ${status} before SEED_COMPLETE — check RunPod dashboard`)
+          // Check pod is still alive (only abort on explicit terminal statuses)
+          const { ok: podOk, data: podData } = await rpApi(`/pods/${podId}`)
+          if (podOk && podData && typeof podData === 'object') {
+            const status = String(podData.desiredStatus ?? podData.status ?? '').toUpperCase()
+            if (['TERMINATED', 'EXITED', 'DEAD'].includes(status)) {
+              if (!seedComplete) {
+                send('warn', `⚠ Pod was terminated (${status}) before SEED_COMPLETE — check RunPod dashboard`)
+              }
+              break
             }
-            break
           }
 
           // Fetch new log lines
