@@ -86,14 +86,17 @@ export const ULTRA_4K_GPUS = [
   'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM (Last resort)
 ]
 
-// MiniMax Hailuo 3 tier (48GB+ VRAM required for MiniMax H3 INT8 transformer — cheapest 48GB first)
+// MiniMax Hailuo 3 tier (32GB/48GB/96GB VRAM for MiniMax H3 INT8 transformer — cheapest first)
 export const MINIMAX_GPUS = [
   'NVIDIA RTX A6000',          // ~$0.33-$0.54/hr — 48GB VRAM (Cheapest)
   'NVIDIA A40',                // ~$0.35-$0.58/hr — 48GB VRAM
   'NVIDIA L40',                // ~$0.65/hr — 48GB VRAM (Verified working)
+  'NVIDIA RTX 5090',           // ~$0.69/hr — 32GB VRAM (Next-gen Blackwell)
   'NVIDIA RTX 6000 Ada Generation', // ~$0.75/hr — 48GB VRAM
-  'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB VRAM (Fallback)
-  'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM (Last resort)
+  'NVIDIA A100 80GB PCIe',     // ~$1.19/hr — 80GB VRAM
+  'NVIDIA A100-SXM4-80GB',     // ~$1.39/hr — 80GB VRAM
+  'NVIDIA RTX PRO 6000 Blackwell Server Edition', // ~$1.69/hr — 96GB VRAM
+  'NVIDIA RTX PRO 6000 Blackwell Workstation Edition', // ~$1.69/hr — 96GB VRAM
 ]
 
 export type GpuTier = 'standard' | 'ultra_4k'
