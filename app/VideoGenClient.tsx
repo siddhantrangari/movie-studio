@@ -188,6 +188,8 @@ export default function VideoGenClient() {
   const [colorPalette, setColorPalette] = useState('Auto')
   const [lighting, setLighting] = useState('Auto')
   const [selectedModel, setSelectedModel] = useState<'ltx25' | 'minimax'>('ltx25')
+  const [refImages, setRefImages] = useState<string[]>([])
+  const maxRefImages = selectedModel === 'minimax' ? 9 : 5
   const [aspectRatio, setAspectRatio] = useState(0)
   const [mode, setMode] = useState<'video' | 'image'>('video')
 
@@ -432,6 +434,7 @@ export default function VideoGenClient() {
           lighting: lighting !== 'Auto' ? lighting : undefined,
           model: selectedModel,
           projectId: activeProjectId,
+          referenceImages: refImages.length > 0 ? refImages : undefined,
         }),
       })
       const data = await res.json()
@@ -453,7 +456,7 @@ export default function VideoGenClient() {
     } finally {
       setSubmitting(false)
     }
-  }, [genRes, selectedCharacterId, cameraMotion, colorPalette, lighting, selectedModel, activeProjectId])
+  }, [genRes, selectedCharacterId, cameraMotion, colorPalette, lighting, selectedModel, activeProjectId, refImages])
 
   // Poll pending
   const pending = jobs.filter(j => j.state === 'queued' || j.state === 'running')
@@ -993,6 +996,88 @@ export default function VideoGenClient() {
                     <span>⚡ {submitting ? 'Generating...' : 'GENERATE'}</span>
                     <span style={{ fontSize: '10px', opacity: 0.7 }}>45 credits</span>
                   </button>
+                </div>
+
+                {/* ── Multi-Reference Image Attachment (Omni-Ref up to 9 for MiniMax, up to 5 for LTX) ── */}
+                <div style={{ marginTop: '0.85rem', paddingTop: '0.75rem', borderTop: '1px solid #142033' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: selectedModel === 'minimax' ? 'var(--gold)' : '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {selectedModel === 'minimax' ? '🌟 Omni-Reference Multi-Images' : '⚡ Character & Scene References'}
+                      </span>
+                      <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.45rem', borderRadius: '0.3rem', color: '#94a3b8', fontWeight: 700 }}>
+                        {refImages.length} / {maxRefImages} max
+                      </span>
+                    </div>
+                    {refImages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setRefImages([])}
+                        style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '10.5px', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {refImages.map((img, idx) => (
+                      <div key={idx} style={{ position: 'relative', width: '56px', height: '56px', borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid rgba(232,185,74,0.4)', background: '#030712' }}>
+                        <img src={img} alt={`ref-${idx}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <span style={{ position: 'absolute', bottom: '2px', left: '2px', background: 'rgba(0,0,0,0.7)', fontSize: '8px', color: '#e2e8f0', padding: '0 3px', borderRadius: '2px', fontWeight: 700 }}>
+                          #{idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRefImages(prev => prev.filter((_, i) => i !== idx))}
+                          style={{ position: 'absolute', top: '2px', right: '2px', width: '16px', height: '16px', borderRadius: '50%', background: 'rgba(239,68,68,0.85)', color: '#fff', border: 'none', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    {refImages.length < maxRefImages && (
+                      <label style={{
+                        width: '56px',
+                        height: '56px',
+                        borderRadius: '0.5rem',
+                        border: '1.5px dashed rgba(232,185,74,0.35)',
+                        background: 'rgba(232,185,74,0.04)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const files = e.target.files
+                            if (!files) return
+                            const remaining = maxRefImages - refImages.length
+                            const toAdd = Array.from(files).slice(0, remaining)
+                            toAdd.forEach(file => {
+                              const reader = new FileReader()
+                              reader.onload = (ev) => {
+                                if (ev.target?.result) {
+                                  setRefImages(prev => prev.length < maxRefImages ? [...prev, ev.target!.result as string] : prev)
+                                }
+                              }
+                              reader.readAsDataURL(file)
+                            })
+                            e.target.value = ''
+                          }}
+                        />
+                        <span style={{ fontSize: '16px', lineHeight: 1 }}>📎</span>
+                        <span style={{ fontSize: '8.5px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>+Add</span>
+                      </label>
+                    )}
+                  </div>
                 </div>
 
                 {genError && (

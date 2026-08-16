@@ -53,8 +53,10 @@ export type GenParams = {
   seconds?: number
   fps?: number
   seed?: number
-  /** Reference image (ComfyUI filename) for character consistency. */
+  /** Single reference image (ComfyUI filename) */
   referenceImage?: string
+  /** Multi-reference images (ComfyUI filenames) - up to 9 for MiniMax, up to 5 for LTX */
+  referenceImages?: string[]
   /** How strongly to hold to the reference image, 0-1. */
   referenceStrength?: number
 }
@@ -133,11 +135,14 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     },
   }
 
-  if (p.referenceImage) {
-    wf['6a'] = { class_type: 'LoadImage', inputs: { image: p.referenceImage } }
+  const refList = (p.referenceImages && p.referenceImages.length > 0 ? p.referenceImages : (p.referenceImage ? [p.referenceImage] : [])).slice(0, 9)
+  if (refList.length > 0) {
+    refList.forEach((img, idx) => {
+      wf[`6a_${idx}`] = { class_type: 'LoadImage', inputs: { image: img } }
+    })
     wf['6'] = {
       class_type: 'MiniMaxH3ImageToVideo',
-      inputs: { image: ['6a', 0], width: baseWidth, height: baseHeight, length: frames, batch_size: 1 },
+      inputs: { image: ['6a_0', 0], width: baseWidth, height: baseHeight, length: frames, batch_size: 1 },
     }
   }
 
@@ -190,17 +195,19 @@ export function buildWorkflow(p: GenParams) {
     },
   }
 
-  if (p.referenceImage) {
-    // Image-to-video: the reference image seeds the first frame, which is what
-    // keeps a character looking like the same person across shots.
-    wf['7a'] = { class_type: 'LoadImage', inputs: { image: p.referenceImage } }
+  const refList = (p.referenceImages && p.referenceImages.length > 0 ? p.referenceImages : (p.referenceImage ? [p.referenceImage] : [])).slice(0, 5)
+  if (refList.length > 0) {
+    // Image-to-video: reference images seed character and scene consistency
+    refList.forEach((img, idx) => {
+      wf[`7a_${idx}`] = { class_type: 'LoadImage', inputs: { image: img } }
+    })
     wf['7'] = {
       class_type: 'LTXVImgToVideo',
       inputs: {
         positive: ['10', 0],
         negative: ['10', 1],
         vae: ['3', 0],
-        image: ['7a', 0],
+        image: ['7a_0', 0],
         width,
         height,
         length,

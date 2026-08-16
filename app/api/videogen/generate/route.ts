@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     characterId, cameraMotion, lens, lighting, colorPalette, projectId, label,
   } = body
   const model = body.model === 'minimax' ? 'minimax' : 'ltx25'
-  let { referenceImage } = body
+  let { referenceImage, referenceImages } = body
 
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
@@ -53,6 +53,30 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const maxRefs = model === 'minimax' ? 9 : 5
+  let uploadedRefs: string[] = []
+
+  if (Array.isArray(referenceImages) && referenceImages.length > 0) {
+    for (let i = 0; i < Math.min(referenceImages.length, maxRefs); i++) {
+      const img = referenceImages[i]
+      if (typeof img === 'string' && img.startsWith('data:image/')) {
+        const matches = img.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+        if (matches && matches[2]) {
+          const buf = Buffer.from(matches[2], 'base64')
+          const fname = `ref_${Date.now()}_${i}.png`
+          try {
+            const uploadedName = await uploadImageToPod(podId, buf, fname)
+            uploadedRefs.push(uploadedName)
+          } catch (err) {
+            console.error('Error uploading ref image:', err)
+          }
+        }
+      } else if (typeof img === 'string' && img.trim()) {
+        uploadedRefs.push(img)
+      }
+    }
+  }
+
   // A character contributes both ways: its portrait seeds the first frame, and
   // its appearance notes lead the prompt.
   let characterDescription: string | undefined
@@ -60,7 +84,7 @@ export async function POST(req: NextRequest) {
     const character = getCharacters().find((c) => c.id === characterId)
     if (character) {
       characterDescription = character.description
-      if (!referenceImage && character.imageFile) {
+      if (!referenceImage && uploadedRefs.length === 0 && character.imageFile) {
         const buf = readCharacterImage(character.imageFile)
         if (buf) {
           try {
@@ -77,11 +101,12 @@ export async function POST(req: NextRequest) {
     model,
     prompt: composePrompt({ prompt, characterDescription, cameraMotion, lens, lighting, colorPalette }),
     negativePrompt,
-    seconds: seconds ?? 4,
-    width: width ?? 704,
-    height: height ?? 384,
+    seconds: seconds ?? (model === 'minimax' ? 5 : 4),
+    width: width ?? (model === 'minimax' ? 1280 : 704),
+    height: height ?? (model === 'minimax' ? 720 : 384),
     seed,
     referenceImage,
+    referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
     referenceStrength,
   })
 
