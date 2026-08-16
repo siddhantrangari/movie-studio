@@ -6,6 +6,7 @@ import { RESOLUTIONS } from '@/lib/resolutions'
 import PromptBuilderDrawer from './components/PromptBuilderDrawer'
 import UsageDashboard from './components/UsageDashboard'
 import EnginesHub from './components/EnginesHub'
+import SingingStudio from './components/SingingStudio'
 import { useToast } from './components/Toast'
 
 type PodData = {
@@ -159,8 +160,8 @@ export default function VideoGenClient() {
     }
   }, [deployLogs])
 
-  // Active Tab navigation: 'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'engines' | 'settings'
-  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'engines' | 'settings'>('home')
+  // Active Tab navigation: 'home' | 'singing' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'engines' | 'settings'
+  const [activeTab, setActiveTab] = useState<'home' | 'singing' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'engines' | 'settings'>('home')
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([])
@@ -678,6 +679,7 @@ export default function VideoGenClient() {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           {[
             { id: 'home', label: 'Home', icon: '🏠' },
+            { id: 'singing', label: 'Singing & Music Studio', icon: '🎤' },
             { id: 'generations', label: 'My generations', icon: '🖼️' },
             { id: 'characters', label: 'Characters', icon: '👤' },
             { id: 'engines', label: 'AI Engines & Pods', icon: '⚡' },
@@ -1798,6 +1800,20 @@ export default function VideoGenClient() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* TAB: SINGING & MUSIC VIDEO STUDIO */}
+          {activeTab === 'singing' && (
+            <SingingStudio
+              projectId={activeProjectId}
+              characters={characters.map(c => ({ id: c.id, name: c.name, imageUrl: c.imageFile ? `/api/videogen/characters?file=${encodeURIComponent(c.imageFile)}` : undefined }))}
+              savedReferences={savedReferences}
+              onOpenRefLibrary={() => {
+                loadSavedReferences()
+                setShowRefLibraryModal(true)
+              }}
+              onNavigateToEngines={() => setActiveTab('engines')}
+            />
           )}
 
           {/* TAB 4: USAGE & COST MONITOR */}
