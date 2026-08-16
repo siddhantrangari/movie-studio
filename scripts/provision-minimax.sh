@@ -104,6 +104,8 @@ do_code() {
     git checkout "$COMFY_VERSION" 2>&1 | tail -2 || true
 
     log "Installing requirements"
+    apt-get update -qq 2>/dev/null || true
+    apt-get install -y -q aria2 2>/dev/null || true
     python3 -m pip install -q -r requirements.txt 2>&1 | tail -3 || true
     python3 -m pip install -q diffusers accelerate safetensors sentencepiece 2>&1 | tail -3 || true
     ok "Code phase ready"
@@ -114,7 +116,8 @@ do_code() {
 # Install aria2 if not present (it's usually already on RunPod images)
 ensure_aria2() {
     command -v aria2c &>/dev/null && return
-    apt-get install -y -q aria2 2>/dev/null || pip install aria2p -q 2>/dev/null || true
+    apt-get update -qq 2>/dev/null || true
+    apt-get install -y -q aria2 2>/dev/null || true
 }
 
 fetch() {   # fetch <url> <dest-dir> <name>
@@ -127,24 +130,47 @@ fetch() {   # fetch <url> <dest-dir> <name>
     log "Downloading $name"
     ensure_aria2
 
-    local aria_args=(
-        --dir="$dest"
-        --out="$name"
-        --split=8
-        --max-connection-per-server=8
-        --min-split-size=50M
-        --max-tries=10
-        --retry-wait=5
-        --continue=true
-        --console-log-level=warn
-        --summary-interval=10
-        --file-allocation=none
-    )
-    if [ -n "${HF_TOKEN:-}" ]; then
-        aria_args+=(--header="Authorization: Bearer ${HF_TOKEN}")
+    if command -v aria2c &>/dev/null; then
+        local aria_args=(
+            --dir="$dest"
+            --out="$name"
+            --split=8
+            --max-connection-per-server=8
+            --min-split-size=50M
+            --max-tries=10
+            --retry-wait=5
+            --continue=true
+            --console-log-level=warn
+            --summary-interval=10
+            --file-allocation=none
+        )
+        if [ -n "${HF_TOKEN:-}" ]; then
+            aria_args+=(--header="Authorization: Bearer ${HF_TOKEN}")
+        fi
+        aria2c "${aria_args[@]}" "$url"
+    else
+        log "Downloading $name with streaming downloader"
+        python3 -c "
+import urllib.request, os, sys
+url = '$url'
+dest = '$dest/$name'
+token = os.environ.get('HF_TOKEN', '')
+req = urllib.request.Request(url)
+if token: req.add_header('Authorization', f'Bearer {token}')
+with urllib.request.urlopen(req) as resp, open(dest, 'wb') as f:
+    total = int(resp.headers.get('Content-Length', 0))
+    downloaded = 0
+    while True:
+        chunk = resp.read(16*1024*1024)
+        if not chunk: break
+        f.write(chunk)
+        downloaded += len(chunk)
+        if total:
+            sys.stdout.write(f'\r    {downloaded//1048576} / {total//1048576} MB ({downloaded*100//total}%)')
+            sys.stdout.flush()
+print()
+"
     fi
-
-    aria2c "${aria_args[@]}" "$url"
     ok "$name downloaded"
 }
 
