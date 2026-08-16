@@ -80,6 +80,49 @@ export default function SingingStudio({
   const [currentGeneratingIndex, setCurrentGeneratingIndex] = useState<number | null>(null)
   const [assembledVideoUrl, setAssembledVideoUrl] = useState<string | null>(null)
   const [isAssembling, setIsAssembling] = useState(false)
+  const [podDownloading, setPodDownloading] = useState(false) // true when pod is still pulling model weights
+  const [podDownloadProgress, setPodDownloadProgress] = useState(0) // 0-100 estimated
+
+  // Inject CSS animations for shimmer + pulse
+  useEffect(() => {
+    const id = 'singing-studio-animations'
+    if (document.getElementById(id)) return
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = `
+      @keyframes ss-shimmer {
+        0% { background-position: -200% center; }
+        100% { background-position: 200% center; }
+      }
+      @keyframes ss-pulse-border {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(232,185,74,0.4); }
+        50% { box-shadow: 0 0 0 6px rgba(232,185,74,0); }
+      }
+      @keyframes ss-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes ss-download-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      .ss-shimmer-bar {
+        background: linear-gradient(90deg, #e8b94a 0%, #c084fc 40%, #60a5fa 60%, #e8b94a 100%);
+        background-size: 200% 100%;
+        animation: ss-shimmer 1.6s linear infinite;
+      }
+      .ss-download-bar {
+        background: linear-gradient(90deg, #3b82f6 0%, #06b6d4 50%, #3b82f6 100%);
+        background-size: 200% 100%;
+        animation: ss-shimmer 2s linear infinite;
+      }
+      .ss-generating-card {
+        animation: ss-pulse-border 2s ease-in-out infinite;
+      }
+    `
+    document.head.appendChild(style)
+    return () => { document.getElementById(id)?.remove() }
+  }, [])
 
   const audioInputRef = useRef<HTMLInputElement>(null)
   const performerInputRef = useRef<HTMLInputElement>(null)
@@ -273,6 +316,7 @@ export default function SingingStudio({
       prev.map((s, idx) => (idx === index ? { ...s, status: 'generating', progress: 0, error: undefined } : s))
     )
     setCurrentGeneratingIndex(index)
+    const startTime = Date.now()
 
     try {
       const refList: string[] = []
@@ -301,11 +345,35 @@ export default function SingingStudio({
 
       // Poll generation status
       let done = false
+      let downloadWarned = false
       while (!done) {
         await new Promise((r) => setTimeout(r, 4000))
         const statusRes = await fetch(`/api/videogen/status?promptId=${promptId}&podId=${data.podId || ''}`)
         if (!statusRes.ok) continue
         const statusData = await statusRes.json()
+
+        // Pod is still booting / downloading weights — show download state
+        if (statusData.state === 'queued' || statusData.state === 'pending') {
+          if (!downloadWarned) {
+            downloadWarned = true
+            setPodDownloading(true)
+          }
+          // Estimate download progress based on elapsed time (MiniMax weights ~15min total)
+          const elapsedSec = (Date.now() - startTime) / 1000
+          const estimatedPct = Math.min(95, Math.round((elapsedSec / 900) * 100))
+          setPodDownloadProgress(estimatedPct)
+          setScenes((prev) =>
+            prev.map((s, idx) =>
+              idx === index
+                ? { ...s, progress: estimatedPct, step: 0, maxStep: 18 }
+                : s
+            )
+          )
+          continue
+        }
+
+        // Job is running — clear downloading state
+        setPodDownloading(false)
 
         if (statusData.state === 'running' || statusData.state === 'executing') {
           setScenes((prev) =>
@@ -322,6 +390,7 @@ export default function SingingStudio({
           )
         } else if (statusData.state === 'done') {
           done = true
+          setPodDownloading(false)
           setScenes((prev) =>
             prev.map((s, idx) =>
               idx === index
@@ -343,6 +412,7 @@ export default function SingingStudio({
       }
       return true
     } catch (err: any) {
+      setPodDownloading(false)
       setScenes((prev) =>
         prev.map((s, idx) => (idx === index ? { ...s, status: 'error', error: err.message } : s))
       )
@@ -843,26 +913,50 @@ export default function SingingStudio({
 
                 {/* Generating Live Animation & Progress */}
                 {sc.status === 'generating' && (
-                  <div style={{
-                    background: 'linear-gradient(135deg, rgba(232, 185, 74, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%)',
-                    border: '1px solid rgba(232, 185, 74, 0.3)',
-                    borderRadius: '0.5rem',
-                    padding: '0.75rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.4rem',
-                  }}>
+                  <div
+                    className="ss-generating-card"
+                    style={{
+                      background: podDownloading && currentGeneratingIndex === idx
+                        ? 'linear-gradient(135deg, rgba(59,130,246,0.1) 0%, rgba(6,182,212,0.08) 100%)'
+                        : 'linear-gradient(135deg, rgba(232, 185, 74, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%)',
+                      border: podDownloading && currentGeneratingIndex === idx
+                        ? '1px solid rgba(59,130,246,0.4)'
+                        : '1px solid rgba(232, 185, 74, 0.3)',
+                      borderRadius: '0.5rem',
+                      padding: '0.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
+                    }}>
+                    {/* Label row */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                      <span style={{ color: 'var(--gold)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span>✨</span>
-                        <span>MiniMax Ref2VA Lip-Syncing & Neural Rendering...</span>
+                      <span style={{
+                        color: podDownloading && currentGeneratingIndex === idx ? '#60a5fa' : 'var(--gold)',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                      }}>
+                        {podDownloading && currentGeneratingIndex === idx ? (
+                          <>
+                            <span style={{ display: 'inline-block', animation: 'ss-spin 1.2s linear infinite' }}>⚙️</span>
+                            <span>Pod loading model weights — generation queued ({podDownloadProgress}% ready)</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>✨</span>
+                            <span>MiniMax Ref2VA Lip-Syncing &amp; Neural Rendering...</span>
+                          </>
+                        )}
                       </span>
                       <span style={{ color: '#F2F5FA', fontWeight: 800 }}>
-                        {sc.progress ? `${Math.round(sc.progress)}%` : 'Rendering Frames...'}
+                        {podDownloading && currentGeneratingIndex === idx
+                          ? `~${Math.max(1, Math.round((100 - podDownloadProgress) * 0.09))}min left`
+                          : sc.progress ? `${Math.round(sc.progress)}%` : 'Rendering...'}
                       </span>
                     </div>
 
-                    {/* Shimmering Animated Progress Bar */}
+                    {/* Animated Progress Bar */}
                     <div style={{
                       width: '100%',
                       height: '6px',
@@ -871,14 +965,36 @@ export default function SingingStudio({
                       overflow: 'hidden',
                       position: 'relative',
                     }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${Math.max(15, sc.progress || 25)}%`,
-                        background: 'linear-gradient(90deg, #e8b94a, #c084fc, #e8b94a)',
-                        borderRadius: '3px',
-                        transition: 'width 0.4s ease',
-                      }} />
+                      <div
+                        className={podDownloading && currentGeneratingIndex === idx ? 'ss-download-bar' : 'ss-shimmer-bar'}
+                        style={{
+                          height: '100%',
+                          width: `${Math.max(8, sc.progress || (podDownloading && currentGeneratingIndex === idx ? podDownloadProgress : 25))}%`,
+                          borderRadius: '3px',
+                          transition: 'width 0.8s ease',
+                        }} />
                     </div>
+
+                    {/* Step counter or download hint */}
+                    {podDownloading && currentGeneratingIndex === idx ? (
+                      <div style={{ fontSize: '10px', color: '#94a3b8', animation: 'ss-download-pulse 2s ease-in-out infinite' }}>
+                        📦 MiniMax H3 weights loading onto GPU — job will start automatically when ready. No action needed.
+                      </div>
+                    ) : sc.step !== undefined && sc.step > 0 ? (
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        {Array.from({ length: sc.maxStep || 18 }, (_, i) => (
+                          <div key={i} style={{
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '2px',
+                            background: i < (sc.step || 0) ? 'var(--gold)' : 'rgba(255,255,255,0.1)',
+                            transition: 'background 0.3s ease',
+                            flexShrink: 0,
+                          }} />
+                        ))}
+                        <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: '0.25rem' }}>Step {sc.step}/{sc.maxStep || 18}</span>
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
