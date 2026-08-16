@@ -6,6 +6,7 @@ import { getCharacters, readCharacterImage, getGenerationJobs, saveGenerationJob
 import { composePrompt } from '@/lib/cinematography'
 import { logUsage } from '@/lib/usage'
 import { putReferenceAsset } from '@/lib/storage'
+import { recordPodActivity } from '@/lib/auto-shutdown'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { prompt_id } = await submitPrompt(podId, built.workflow)
+    recordPodActivity(podId)
 
     const jobId = `job_${newId()}`
     const saved = saveGenerationJob({

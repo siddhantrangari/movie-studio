@@ -15,6 +15,14 @@ import {
 
 import { PodModel } from '@/lib/runpod'
 
+import {
+  checkAndAutoTerminateIdlePods,
+  getAutoShutdownMinutes,
+  setAutoShutdownMinutes,
+  getPodIdleInfo,
+  recordPodActivity,
+} from '@/lib/auto-shutdown'
+
 // Bringing a pod up includes a ~4 minute download.
 export const maxDuration = 900
 export const dynamic = 'force-dynamic'
@@ -24,6 +32,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const model = (req.nextUrl.searchParams.get('model') || 'ltx25') as PodModel
+
+  // Run opportunistic idle check
+  checkAndAutoTerminateIdlePods().catch(() => {})
+
   const [pod, allPods, account, volumes] = await Promise.all([
     findPod(model),
     listAllPods(),
@@ -35,6 +47,8 @@ export async function GET(req: NextRequest) {
   const gpu = Number(pod?.costPerHr ?? 0)
   const diskGb = Number(pod?.containerDiskInGb ?? 0) + Number(pod?.volumeInGb ?? 0)
   const storage = (diskGb * 0.1) / 730
+
+  const idleInfo = pod ? getPodIdleInfo(pod.id) : null
 
   return NextResponse.json({
     model,
@@ -56,11 +70,16 @@ export async function GET(req: NextRequest) {
           diskGb,
           comfyui: `https://${pod.id}-8188.proxy.runpod.net`,
           jupyter: `https://${pod.id}-8888.proxy.runpod.net`,
+          idleInfo,
         }
       : null,
-    pods: allPods,
+    pods: allPods.map((p) => ({
+      ...p,
+      idleInfo: getPodIdleInfo(p.id),
+    })),
     volumes,
     account,
+    autoShutdownMinutes: getAutoShutdownMinutes(),
     // Lets a reloaded page re-attach to a run already in flight.
     job: job ? { running: job.running, action: job.action, lines: job.lines, tier: job.tier, model: job.model } : null,
   })
@@ -101,9 +120,14 @@ export async function POST(req: NextRequest) {
     if (!volumeName || !newSizeGb) {
       return NextResponse.json({ error: 'volumeName and newSizeGb are required' }, { status: 400 })
     }
-    const res = await createVolume(volumeName, Number(newSizeGb), dataCenterId || 'EU-RO-1')
     if (!res.ok) return NextResponse.json({ error: res.error || 'Create failed' }, { status: 500 })
     return NextResponse.json({ ok: true, id: res.id, message: `Volume ${volumeName} created successfully!` })
+  }
+
+  if (action === 'set-auto-shutdown') {
+    const minutes = Number(body.minutes || 5)
+    setAutoShutdownMinutes(minutes)
+    return NextResponse.json({ ok: true, minutes: getAutoShutdownMinutes(), message: `Auto-shutdown set to ${minutes} minutes of inactivity.` })
   }
 
   const validActions = ['up', 'down', 'stop', 'start', 'terminate']

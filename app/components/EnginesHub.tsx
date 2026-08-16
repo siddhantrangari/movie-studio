@@ -14,6 +14,12 @@ export type PodInfo = {
   diskGb: number
   comfyui: string
   jupyter: string
+  idleInfo?: {
+    idleSec: number
+    maxIdleSec: number
+    remainingSec: number
+    willShutdownInSec: number
+  }
 }
 
 export type NetworkVolumeInfo = {
@@ -49,6 +55,23 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
   const [newVolName, setNewVolName] = useState('studio-models')
   const [newVolSize, setNewVolSize] = useState(200)
   const [newVolDc, setNewVolDc] = useState('EU-RO-1')
+  const [autoShutdownMinutes, setAutoShutdownMinutes] = useState<number>(5)
+
+  const handleUpdateAutoShutdown = async (mins: number) => {
+    try {
+      setAutoShutdownMinutes(mins)
+      const res = await fetch('/api/videogen/pod', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-auto-shutdown', minutes: mins }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to update setting')
+      toast.success(`🛡️ Auto-Shutdown set to ${mins} minutes of inactivity!`)
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
 
   const handleResizeVolume = async (volId: string, sizeGb: number) => {
     setIsManagingVolume(true)
@@ -135,6 +158,9 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
         const podJson = await podRes.json()
         if (podJson.volumes) {
           setVolumes(podJson.volumes)
+        }
+        if (podJson.autoShutdownMinutes) {
+          setAutoShutdownMinutes(podJson.autoShutdownMinutes)
         }
       }
     } catch {
@@ -741,6 +767,35 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
               Individual pod controls. Start, stop, or terminate any pod directly from the studio.
             </p>
           </div>
+
+          {/* Auto-Shutdown Settings */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: '#05080e', border: '1px solid #1a2840', borderRadius: '0.5rem', padding: '0.4rem 0.8rem' }}>
+            <span style={{ fontSize: '12px' }}>🛡️</span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Inactivity Protection</span>
+              <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>Auto-Terminate After:</span>
+            </div>
+            <select
+              value={autoShutdownMinutes}
+              onChange={(e) => handleUpdateAutoShutdown(Number(e.target.value))}
+              style={{
+                background: '#0a101d',
+                border: '1px solid #2563eb',
+                color: '#fff',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '0.35rem',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <option value={3}>3 Minutes (Ultra Fast)</option>
+              <option value={5}>5 Minutes (Recommended)</option>
+              <option value={10}>10 Minutes</option>
+              <option value={15}>15 Minutes</option>
+              <option value={30}>30 Minutes</option>
+            </select>
+          </div>
         </div>
 
         {/* Fleet Table */}
@@ -757,6 +812,7 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
                   <th style={{ padding: '0.6rem 0.75rem' }}>AI Model Engine</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Machine / GPU Model</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Status</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>Inactivity Protection</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Hourly Compute</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Disk Storage</th>
                   <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Actions</th>
@@ -766,6 +822,7 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
                 {pods.map((p) => {
                   const isRunning = p.status === 'RUNNING'
                   const isMiniMax = p.name?.toLowerCase().includes('minimax')
+                  const idle = p.idleInfo
                   return (
                     <tr key={p.id} style={{ borderBottom: '1px solid rgba(26,40,64,0.4)', color: '#cbd5e1' }}>
                       <td style={{ padding: '0.6rem 0.75rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--gold, #E8B94A)' }}>
@@ -821,6 +878,26 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
                         >
                           {isRunning ? '● RUNNING' : '○ STOPPED'}
                         </span>
+                      </td>
+                      <td style={{ padding: '0.6rem 0.75rem' }}>
+                        {isRunning ? (
+                          <span style={{
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '0.3rem',
+                            fontSize: '9.5px',
+                            fontWeight: 700,
+                            background: 'rgba(59, 130, 246, 0.12)',
+                            color: '#60a5fa',
+                            border: '1px solid rgba(59, 130, 246, 0.25)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                          }}>
+                            🛡️ {idle ? `Auto-terminates in ${Math.floor((idle.remainingSec || 0) / 60)}m ${(idle.remainingSec || 0) % 60}s` : `Active (${autoShutdownMinutes}m watchdog)`}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: '#64748b' }}>—</span>
+                        )}
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem', color: isRunning ? '#4ade80' : '#64748b', fontWeight: 700 }}>
                         ${p.totalPerHr ? p.totalPerHr.toFixed(2) : (p.costPerHr ? p.costPerHr.toFixed(2) : '0.00')}/hr
