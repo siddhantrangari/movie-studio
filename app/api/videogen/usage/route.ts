@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
-import { getUsageAnalytics, getUsageRecords } from '@/lib/usage'
-import { accountBalance, findPod } from '@/lib/podops'
+import { getUsageAnalytics } from '@/lib/usage'
+import { accountBalance, findPod, listAllPods } from '@/lib/podops'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +11,7 @@ export async function GET() {
   }
 
   const analytics = getUsageAnalytics()
-  const [account, pod] = await Promise.all([accountBalance(), findPod()])
+  const [account, pod, allPods] = await Promise.all([accountBalance(), findPod(), listAllPods()])
 
   return NextResponse.json({
     success: true,
@@ -28,6 +28,7 @@ export async function GET() {
             status: pod.desiredStatus,
           }
         : null,
+      pods: allPods,
     },
   })
 }

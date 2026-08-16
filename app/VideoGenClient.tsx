@@ -398,45 +398,42 @@ export default function VideoGenClient() {
     return () => { cancelled = true; clearInterval(iv) }
   }, [pendingKey])
 
+  const [promptDeployConflict, setPromptDeployConflict] = useState<{
+    targetTier: 'standard' | 'ultra_4k'
+    existingPod: any
+  } | null>(null)
+
   // Deploy / Actions handlers
-  const deploy = async (model: Model, tier: 'standard' | 'ultra_4k' = selectedTier) => {
+  const deploy = async (model: Model, tier: 'standard' | 'ultra_4k' = selectedTier, terminatePodId?: string) => {
     const isLtx = model === 'ltx25'
     setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: true }))
     setDeployError(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: null }))
     try {
-      const res = await fetch('/api/videogen', {
+      const res = await fetch('/api/videogen/pod', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, tier }),
+        body: JSON.stringify({ action: 'up', tier, terminatePodId }),
       })
-      const data = await res.json()
-      if (!res.ok || data.error) throw new Error(data.error || 'Deployment failed')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Deployment failed')
+      }
       await fetchStatus()
     } catch (e) {
       setDeployError(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: (e as Error).message }))
     } finally {
       setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: false }))
+      setShow4kModal(false)
+      setPromptDeployConflict(null)
     }
   }
 
-  const switchPodTier = async (newTier: 'standard' | 'ultra_4k') => {
-    setIsSwitchingPod(true)
-    setSelectedTier(newTier)
-    try {
-      // 1. Terminate existing pod to avoid paying for two
-      await fetch('/api/videogen', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'ltx25', action: 'terminate' }),
-      })
-      // 2. Deploy new tier
-      await deploy('ltx25', newTier)
-      setShow4kModal(false)
-    } catch (e) {
-      setDeployError(prev => ({ ...prev, ltx25: (e as Error).message }))
-    } finally {
-      setIsSwitchingPod(false)
+  const handleTierDeployRequest = (tier: 'standard' | 'ultra_4k') => {
+    if (ltxRunning && pods.ltx) {
+      setPromptDeployConflict({ targetTier: tier, existingPod: pods.ltx })
+      return
     }
+    deploy('ltx25', tier)
   }
 
   const handleResolutionChange = (val: number) => {
@@ -1441,122 +1438,185 @@ export default function VideoGenClient() {
       {/* Modal 4: GPU Pod Control Drawer */}
       {showPodDrawer && (
         <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5, 8, 14, 0.75)',
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5, 8, 14, 0.78)',
           backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
         }}>
-          <div style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '1rem', padding: '1.5rem', width: '480px', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '1rem', padding: '1.5rem', width: '540px', maxWidth: '94vw', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <p style={{ fontWeight: 800, fontSize: '14px', margin: 0, color: 'var(--gold)' }}>⚡ Compute Nodes (RunPod GPU Control)</p>
-              <button onClick={() => setShowPodDrawer(false)} style={{ background: 'none', border: 'none', color: '#96A3B6', fontSize: '14px', cursor: 'pointer' }}>×</button>
+              <p style={{ fontWeight: 800, fontSize: '15px', margin: 0, color: 'var(--gold)' }}>⚡ RunPod GPU Compute Fleet</p>
+              <button onClick={() => { setShowPodDrawer(false); setPromptDeployConflict(null); }} style={{ background: 'none', border: 'none', color: '#96A3B6', fontSize: '16px', cursor: 'pointer' }}>×</button>
             </div>
 
-            <div style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div>
-                <p style={{ fontWeight: 800, fontSize: '13px', margin: 0 }}>LTX 2.5 Compute Node</p>
-                <p style={{ fontSize: '10px', color: '#64748b', margin: '0.15rem 0 0' }}>
-                  {pods.ltx?.machine?.gpuDisplayName || 'Dynamic GPU Tier Allocation'}
+            {/* In-UI Conflict Resolution Dialog */}
+            {promptDeployConflict ? (
+              <div style={{ background: '#121F35', border: '1px solid var(--gold)', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: 'var(--gold)' }}>
+                      Active Node Detected
+                    </h4>
+                    <p style={{ margin: '0.15rem 0 0', fontSize: '11px', color: '#cbd5e1' }}>
+                      A GPU node ({promptDeployConflict.existingPod?.machine?.gpuDisplayName || 'NVIDIA GPU'}) is currently <strong>RUNNING</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+                  Would you like to terminate the existing running node to prevent paying for two, or deploy alongside?
                 </p>
-              </div>
 
-              {/* Tier Selection Radio */}
-              {!ltxRunning && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem', background: '#0e182e', borderRadius: '0.5rem', border: '1px solid #1a2840' }}>
-                  <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Select GPU Hardware Tier:</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '11px', cursor: 'pointer', color: selectedTier === 'standard' ? 'var(--gold)' : '#cbd5e1' }}>
-                    <input
-                      type="radio"
-                      name="gpuTier"
-                      checked={selectedTier === 'standard'}
-                      onChange={() => setSelectedTier('standard')}
-                    />
-                    <span><strong>Standard (24GB VRAM)</strong> · RTX 3090/4090 (~$0.22-$0.34/hr) — Best for 720p/1080p</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '11px', cursor: 'pointer', color: selectedTier === 'ultra_4k' ? 'var(--gold)' : '#cbd5e1' }}>
-                    <input
-                      type="radio"
-                      name="gpuTier"
-                      checked={selectedTier === 'ultra_4k'}
-                      onChange={() => setSelectedTier('ultra_4k')}
-                    />
-                    <span><strong>Ultra 4K (48GB/80GB VRAM)</strong> · A6000/A40/L40S/A100 (~$0.35-$1.19/hr) — Required for 4K</span>
-                  </label>
-                </div>
-              )}
-
-              <div style={{ fontSize: '11px', color: ltxRunning ? '#4ade80' : '#f87171', fontWeight: 700 }}>
-                Status: {ltxRunning ? 'RUNNING (Online)' : 'OFFLINE (Stopped)'}
-              </div>
-
-              {deployError.ltx25 && (
-                <div style={{ padding: '0.5rem', background: 'rgba(248,113,113,0.1)', border: '1px solid #f87171', borderRadius: '0.35rem', color: '#f87171', fontSize: '10.5px' }}>
-                  ⚠️ {deployError.ltx25}
-                </div>
-              )}
-
-              {!ltxRunning ? (
-                <button
-                  onClick={() => deploy('ltx25', selectedTier)}
-                  disabled={deploying.ltx25}
-                  style={{
-                    width: '100%', padding: '0.6rem', border: 'none', borderRadius: '0.4rem',
-                    background: deploying.ltx25 ? '#1a2840' : 'var(--gold)',
-                    color: deploying.ltx25 ? '#64748b' : '#05080e',
-                    fontWeight: 800, fontSize: '11.5px', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {deploying.ltx25 ? '⚡ Deploying GPU Node...' : `🚀 Deploy ${selectedTier === 'ultra_4k' ? 'Ultra 4K (48GB+)' : 'Standard (24GB)'} Node`}
-                </button>
-              ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => deploy('ltx25', promptDeployConflict.targetTier, promptDeployConflict.existingPod?.id)}
+                    style={{
+                      background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                      color: '#fff', border: 'none', borderRadius: '0.4rem', padding: '0.65rem',
+                      fontWeight: 800, fontSize: '11.5px', cursor: 'pointer'
+                    }}
+                  >
+                    🛑 Terminate Running Pod & Deploy {promptDeployConflict.targetTier === 'ultra_4k' ? 'Ultra 4K' : 'Standard'}
+                  </button>
+
+                  <button
+                    onClick={() => deploy('ltx25', promptDeployConflict.targetTier)}
+                    style={{
+                      background: 'var(--gold)',
+                      color: '#05080e', border: 'none', borderRadius: '0.4rem', padding: '0.65rem',
+                      fontWeight: 800, fontSize: '11.5px', cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Keep Running Pod & Deploy Alongside
+                  </button>
+
+                  <button
+                    onClick={() => setPromptDeployConflict(null)}
+                    style={{
+                      background: '#070c14', color: '#94a3b8', border: '1px solid #1a2840',
+                      borderRadius: '0.4rem', padding: '0.5rem', fontSize: '11px', fontWeight: 700, cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Active Pod Status Banner */}
+                {ltxRunning && (
+                  <div style={{ background: '#070c14', border: '1px solid rgba(74,222,128,0.4)', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          ● ACTIVE COMPUTE NODE (RUNNING)
+                        </span>
+                        <h4 style={{ margin: '0.2rem 0 0', fontSize: '13px', fontWeight: 800, color: '#F2F5FA' }}>
+                          {pods.ltx?.machine?.gpuDisplayName || 'NVIDIA GPU Node'}
+                        </h4>
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold)', background: '#0e182e', padding: '0.25rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
+                        ${Number(pods.ltx?.costPerHr || 0.22).toFixed(2)}/hr
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => podAction('ltx25', 'stop')}
+                        disabled={!!actionLoading.ltx25}
+                        style={{
+                          flex: 1, padding: '0.55rem', border: '1px solid rgba(248,113,113,0.4)', borderRadius: '0.4rem',
+                          background: 'rgba(248,113,113,0.15)', color: '#f87171', fontWeight: 800, fontSize: '11px', cursor: 'pointer'
+                        }}
+                      >
+                        {actionLoading.ltx25 === 'stop' ? '⏳ Stopping...' : '⏸️ Stop Node'}
+                      </button>
+
+                      <button
+                        onClick={() => podAction('ltx25', 'terminate')}
+                        disabled={!!actionLoading.ltx25}
+                        style={{
+                          flex: 1, padding: '0.55rem', border: 'none', borderRadius: '0.4rem',
+                          background: '#ef4444', color: '#fff', fontWeight: 800, fontSize: '11px', cursor: 'pointer'
+                        }}
+                      >
+                        {actionLoading.ltx25 === 'terminate' ? '⏳ Terminating...' : '🛑 Terminate & Stop Billing'}
+                      </button>
+
+                      {pods.ltx?.id && (
+                        <a
+                          href={`https://${pods.ltx.id}-8188.proxy.runpod.net`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            padding: '0.55rem 0.75rem', background: '#0e182e', border: '1px solid #1a2840',
+                            color: '#cbd5e1', textDecoration: 'none', borderRadius: '0.4rem', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center'
+                          }}
+                        >
+                          🌐 ComfyUI
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {deployError.ltx25 && (
+                  <div style={{ padding: '0.6rem', background: 'rgba(248,113,113,0.1)', border: '1px solid #f87171', borderRadius: '0.4rem', color: '#f87171', fontSize: '11px' }}>
+                    ⚠️ {deployError.ltx25}
+                  </div>
+                )}
+
+                {/* GPU Tier Selection Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                  {/* Card 1: Standard 24GB */}
+                  <div style={{ background: '#070c14', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                      ⚡ Standard Tier
+                    </span>
+                    <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: '#F2F5FA' }}>
+                      24GB VRAM
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
+                      RTX 3090 / 4090 (~$0.22-$0.34/hr). Optimal for 720p & 1080p rendering.
+                    </p>
                     <button
-                      onClick={() => podAction('ltx25', 'stop')}
-                      disabled={!!actionLoading.ltx25}
+                      onClick={() => handleTierDeployRequest('standard')}
+                      disabled={deploying.ltx25}
                       style={{
-                        flex: 1, padding: '0.6rem', border: '1px solid rgba(248,113,113,0.4)', borderRadius: '0.4rem',
-                        background: actionLoading.ltx25 === 'stop' ? '#1a2840' : 'rgba(248,113,113,0.15)',
-                        color: actionLoading.ltx25 === 'stop' ? '#94a3b8' : '#f87171',
-                        fontWeight: 800, fontSize: '11px', cursor: actionLoading.ltx25 ? 'not-allowed' : 'pointer'
+                        marginTop: 'auto', padding: '0.55rem', borderRadius: '0.4rem',
+                        background: 'linear-gradient(135deg, #1e3a8a, #0e182e)', border: '1px solid #3b82f6',
+                        color: '#93c5fd', fontWeight: 800, fontSize: '11px', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {actionLoading.ltx25 === 'stop' ? '⏳ Stopping Node...' : '⏸️ Stop Node'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm('Terminate GPU pod? This destroys the pod and halts all hourly billing.')) {
-                          podAction('ltx25', 'terminate')
-                        }
-                      }}
-                      disabled={!!actionLoading.ltx25}
-                      style={{
-                        flex: 1, padding: '0.6rem', border: 'none', borderRadius: '0.4rem',
-                        background: actionLoading.ltx25 === 'terminate' ? '#1a2840' : '#ef4444',
-                        color: '#ffffff', fontWeight: 800, fontSize: '11px', cursor: actionLoading.ltx25 ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      {actionLoading.ltx25 === 'terminate' ? '⏳ Terminating...' : '🛑 Terminate & Stop Billing'}
+                      {deploying.ltx25 ? '⚡ Deploying...' : '🚀 Deploy Standard (24GB)'}
                     </button>
                   </div>
 
-                  {/* Quick Switch Tier Button */}
-                  <button
-                    onClick={() => {
-                      const newTier = selectedTier === 'standard' ? 'ultra_4k' : 'standard'
-                      if (confirm(`Switch pod to ${newTier === 'ultra_4k' ? 'Ultra 4K (48GB/80GB)' : 'Standard (24GB)'}? This will terminate the current node and start the new tier.`)) {
-                        switchPodTier(newTier)
-                      }
-                    }}
-                    disabled={isSwitchingPod}
-                    style={{
-                      width: '100%', padding: '0.5rem', background: '#0e182e', border: '1px solid #1a2840',
-                      color: 'var(--gold)', borderRadius: '0.4rem', fontSize: '10.5px', fontWeight: 700, cursor: 'pointer'
-                    }}
-                  >
-                    {isSwitchingPod ? '⏳ Switching Node Tier...' : '🔄 Switch to Different GPU Tier'}
-                  </button>
+                  {/* Card 2: Ultra 4K 48GB/80GB */}
+                  <div style={{ background: '#070c14', border: '1px solid rgba(232,185,74,0.3)', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase' }}>
+                      🔥 Ultra 4K Tier
+                    </span>
+                    <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: 'var(--gold)' }}>
+                      48GB / 80GB VRAM
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
+                      A100 80GB / A6000 (~$0.79-$1.64/hr). Required for raw 4K direct diffusion.
+                    </p>
+                    <button
+                      onClick={() => handleTierDeployRequest('ultra_4k')}
+                      disabled={deploying.ltx25}
+                      style={{
+                        marginTop: 'auto', padding: '0.55rem', borderRadius: '0.4rem',
+                        background: 'linear-gradient(135deg, #E8B94A, #d97706)', border: 'none',
+                        color: '#05080e', fontWeight: 900, fontSize: '11px', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {deploying.ltx25 ? '⚡ Deploying...' : '🔥 Deploy Ultra 4K (48GB+)'}
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1587,15 +1647,25 @@ export default function VideoGenClient() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <button
-                onClick={() => switchPodTier('ultra_4k')}
-                disabled={isSwitchingPod}
+                onClick={() => deploy('ltx25', 'ultra_4k', pods.ltx?.id)}
+                disabled={deploying.ltx25}
                 style={{
-                  padding: '0.75rem', borderRadius: '0.5rem', background: 'var(--gold)',
-                  color: '#05080e', fontWeight: 800, fontSize: '12px', border: 'none', cursor: isSwitchingPod ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
+                  padding: '0.75rem', borderRadius: '0.5rem', background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                  color: '#fff', fontWeight: 800, fontSize: '12px', border: 'none', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
                 }}
               >
-                {isSwitchingPod ? '⏳ Terminating 24GB & Starting 48GB/80GB Pod...' : '🚀 Switch to Ultra 4K (48GB/80GB) Pod & Set 4K'}
+                {deploying.ltx25 ? '⏳ Deploying Ultra 4K Node...' : '🛑 Terminate 24GB & Deploy Ultra 4K (48GB/80GB)'}
+              </button>
+
+              <button
+                onClick={() => deploy('ltx25', 'ultra_4k')}
+                disabled={deploying.ltx25}
+                style={{
+                  padding: '0.7rem', borderRadius: '0.5rem', background: 'var(--gold)',
+                  color: '#05080e', fontWeight: 800, fontSize: '11.5px', border: 'none', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                ⚡ Keep 24GB & Deploy Ultra 4K Alongside
               </button>
 
               <button

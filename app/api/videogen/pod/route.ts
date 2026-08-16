@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAdminAuthenticated } from '@/lib/auth'
-import { startJob, currentJob, findPod, accountBalance, type LogLine } from '@/lib/podops'
+import { startJob, currentJob, findPod, listAllPods, accountBalance, type LogLine } from '@/lib/podops'
 
 // Bringing a pod up includes a ~4 minute download.
 export const maxDuration = 900
@@ -10,13 +10,9 @@ export async function GET() {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const [pod, account] = await Promise.all([findPod(), accountBalance()])
+  const [pod, allPods, account] = await Promise.all([findPod(), listAllPods(), accountBalance()])
   const job = currentJob()
 
-  // The API's costPerHr is the GPU rate only; RunPod's console shows GPU plus
-  // storage, which is why the two disagreed. Storage runs ~$0.10/GB/month on a
-  // running pod. GPU rates also move with demand, so this is re-read every poll
-  // rather than cached from creation time.
   const gpu = Number(pod?.costPerHr ?? 0)
   const diskGb = Number(pod?.containerDiskInGb ?? 0) + Number(pod?.volumeInGb ?? 0)
   const storage = (diskGb * 0.1) / 730
@@ -36,6 +32,7 @@ export async function GET() {
           jupyter: `https://${pod.id}-8888.proxy.runpod.net`,
         }
       : null,
+    pods: allPods,
     account,
     // Lets a reloaded page re-attach to a run already in flight.
     job: job ? { running: job.running, action: job.action, lines: job.lines, tier: job.tier } : null,
@@ -51,14 +48,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { action, tier } = await req.json()
-  if (!['up', 'down'].includes(action)) {
+  const { action, tier, terminatePodId, targetPodId } = await req.json()
+  const validActions = ['up', 'down', 'stop', 'start', 'terminate']
+  if (!validActions.includes(action)) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
 
   // The run itself is detached, so navigating away no longer strands a
   // half-provisioned pod that is still billing. This response just tails it.
-  const job = startJob(action, tier || 'standard')
+  const job = startJob(action as 'up' | 'down' | 'stop' | 'start' | 'terminate', {
+    tier: tier || 'standard',
+    terminatePodId,
+    targetPodId,
+  })
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({

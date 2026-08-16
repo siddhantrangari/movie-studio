@@ -104,19 +104,108 @@ export type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: 
 type Job = { id: string; action: string; tier?: GpuTier; lines: LogLine[]; running: boolean; startedAt: number }
 let current: Job | null = null
 
+export type PodInfo = {
+  id: string
+  name: string
+  gpuDisplayName: string
+  status: string
+  costPerHr: number
+  storagePerHr: number
+  totalPerHr: number
+  diskGb: number
+  comfyui: string
+  jupyter: string
+}
+
 export function currentJob(): Job | null {
   return current
 }
 
+export async function listAllPods(): Promise<PodInfo[]> {
+  const { data } = await api('/pods')
+  if (!Array.isArray(data)) return []
+  return data.map((p) => {
+    const gpu = Number(p.costPerHr ?? 0)
+    const diskGb = Number(p.containerDiskInGb ?? 0) + Number(p.volumeInGb ?? 0)
+    const storage = (diskGb * 0.1) / 730
+    const machine = p.machine as { gpuDisplayName?: string } | undefined
+    return {
+      id: String(p.id),
+      name: String(p.name ?? 'pod'),
+      gpuDisplayName: machine?.gpuDisplayName || (p.gpuName as string) || (p.gpuTypeId as string) || 'NVIDIA GPU',
+      status: String(p.desiredStatus ?? 'UNKNOWN'),
+      costPerHr: gpu,
+      storagePerHr: Number(storage.toFixed(4)),
+      totalPerHr: Number((gpu + storage).toFixed(3)),
+      diskGb,
+      comfyui: `https://${p.id}-8188.proxy.runpod.net`,
+      jupyter: `https://${p.id}-8888.proxy.runpod.net`,
+    }
+  })
+}
+
+export async function stopPod(podId?: string): Promise<{ ok: boolean; error?: string }> {
+  const targetId = podId || (await findPod())?.id
+  if (!targetId) return { ok: false, error: 'No pod found to stop' }
+  const res = await api(`/pods/${targetId}/stop`, { method: 'POST' })
+  return { ok: res.ok, error: res.error ? String(res.error) : undefined }
+}
+
+export async function resumePod(podId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!podId) return { ok: false, error: 'Pod ID required' }
+  const res = await api(`/pods/${podId}/start`, { method: 'POST' })
+  return { ok: res.ok, error: res.error ? String(res.error) : undefined }
+}
+
+export async function terminatePod(podId?: string): Promise<{ ok: boolean; error?: string }> {
+  const targetId = podId || (await findPod())?.id
+  if (!targetId) return { ok: false, error: 'No pod found to terminate' }
+  const res = await api(`/pods/${targetId}`, { method: 'DELETE' })
+  return { ok: res.ok, error: res.error ? String(res.error) : undefined }
+}
+
 /** Starts a run detached from the caller. Returns immediately. */
-export function startJob(action: 'up' | 'down', tier: GpuTier = 'standard'): Job {
+export function startJob(
+  action: 'up' | 'down' | 'stop' | 'start' | 'terminate',
+  options: { tier?: GpuTier; terminatePodId?: string; targetPodId?: string } = {}
+): Job {
   if (current?.running) return current
-  const job: Job = { id: Math.random().toString(36).slice(2, 10), action, tier, lines: [], running: true, startedAt: Date.now() }
+  const tier = options.tier || 'standard'
+  const job: Job = {
+    id: Math.random().toString(36).slice(2, 10),
+    action,
+    tier,
+    lines: [],
+    running: true,
+    startedAt: Date.now(),
+  }
   current = job
   ;(async () => {
     try {
-      for await (const line of action === 'up' ? bringUp(tier) : tearDown()) {
-        job.lines.push(line)
+      if (action === 'up') {
+        for await (const line of bringUp(tier, options.terminatePodId)) {
+          job.lines.push(line)
+        }
+      } else if (action === 'down' || action === 'terminate') {
+        for await (const line of tearDown(options.targetPodId)) {
+          job.lines.push(line)
+        }
+      } else if (action === 'stop') {
+        job.lines.push({ level: 'info', text: `Stopping pod ${options.targetPodId || 'active'}...` })
+        const res = await stopPod(options.targetPodId)
+        if (res.ok) {
+          job.lines.push({ level: 'ok', text: 'Pod stopped successfully. Compute billing paused.' })
+        } else {
+          job.lines.push({ level: 'error', text: `Failed to stop: ${res.error || 'Unknown error'}` })
+        }
+      } else if (action === 'start') {
+        job.lines.push({ level: 'info', text: `Starting pod ${options.targetPodId}...` })
+        const res = await resumePod(options.targetPodId!)
+        if (res.ok) {
+          job.lines.push({ level: 'ok', text: 'Pod started! Booting container...' })
+        } else {
+          job.lines.push({ level: 'error', text: `Failed to start: ${res.error || 'Unknown error'}` })
+        }
       }
     } catch (e) {
       job.lines.push({ level: 'error', text: (e as Error).message })
@@ -268,9 +357,16 @@ export async function findVolume(): Promise<{ id: string; dataCenterId: string }
  * Deploys a pod and provisions it, yielding progress as it goes.
  * Safe to call when a pod already exists — it reports and stops.
  */
-export async function* bringUp(tier: GpuTier = 'standard'): AsyncGenerator<LogLine> {
+export async function* bringUp(tier: GpuTier = 'standard', terminatePodId?: string): AsyncGenerator<LogLine> {
+  if (terminatePodId) {
+    yield { level: 'info', text: `Terminating pod (${terminatePodId})...` }
+    await terminatePod(terminatePodId)
+    yield { level: 'ok', text: `Pod ${terminatePodId} terminated.` }
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+
   const existing = await findPod()
-  if (existing) {
+  if (existing && !terminatePodId) {
     const id = String(existing.id)
     yield { level: 'ok', text: `Pod already running: ${id}` }
     if (await comfyReady(id)) {
@@ -470,15 +566,15 @@ async function* awaitProvisioning(
   yield { level: 'warn', text: 'Timed out after 30 min. The pod is still up and billing — inspect it or shut it down.' }
 }
 
-export async function* tearDown(): AsyncGenerator<LogLine> {
-  const pod = await findPod()
-  if (!pod) {
-    yield { level: 'ok', text: 'No pod running — nothing is billing.' }
+export async function* tearDown(targetPodId?: string): AsyncGenerator<LogLine> {
+  const pod = targetPodId ? { id: targetPodId } : await findPod()
+  if (!pod?.id) {
+    yield { level: 'ok', text: 'No pod found — nothing is billing.' }
     yield { level: 'done', text: '' }
     return
   }
-  yield { level: 'info', text: `Terminating ${pod.id}…` }
+  yield { level: 'info', text: `Terminating pod ${pod.id}…` }
   await api(`/pods/${pod.id}`, { method: 'DELETE' })
-  yield { level: 'ok', text: 'Terminated. Billing stopped.' }
+  yield { level: 'ok', text: `Pod ${pod.id} terminated. Billing stopped.` }
   yield { level: 'done', text: '' }
 }
