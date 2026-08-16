@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { RESOLUTIONS } from '@/lib/resolutions'
 import PromptBuilderDrawer from './components/PromptBuilderDrawer'
 import UsageDashboard from './components/UsageDashboard'
+import EnginesHub from './components/EnginesHub'
 import { useToast } from './components/Toast'
 
 type PodData = {
@@ -158,8 +159,8 @@ export default function VideoGenClient() {
     }
   }, [deployLogs])
 
-  // Active Tab navigation: 'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'
-  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'>('home')
+  // Active Tab navigation: 'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'engines' | 'settings'
+  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'engines' | 'settings'>('home')
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([])
@@ -630,6 +631,7 @@ export default function VideoGenClient() {
             { id: 'home', label: 'Home', icon: '🏠' },
             { id: 'generations', label: 'My generations', icon: '🖼️' },
             { id: 'characters', label: 'Characters', icon: '👤' },
+            { id: 'engines', label: 'AI Engines & Pods', icon: '⚡' },
             { id: 'usage', label: 'Usage & Costs', icon: '📊' },
           ].map(item => {
             const active = activeTab === item.id
@@ -1531,6 +1533,13 @@ export default function VideoGenClient() {
           {activeTab === 'usage' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem 0' }}>
               <UsageDashboard />
+            </div>
+          )}
+
+          {/* TAB 5: AI ENGINES & COMPUTE HUB */}
+          {activeTab === 'engines' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem 0' }}>
+              <EnginesHub onNavigateToGen={() => setActiveTab('home')} />
             </div>
           )}
         </div>
