@@ -7,8 +7,9 @@ import { composePrompt } from '@/lib/cinematography'
 import { logUsage } from '@/lib/usage'
 import { putReferenceAsset } from '@/lib/storage'
 import { recordPodActivity } from '@/lib/auto-shutdown'
+import { bringUp } from '@/lib/podops'
 
-export const maxDuration = 60
+export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -47,12 +48,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
   }
 
-  const podId = await getRunningPodId(model)
+  let podId = await getRunningPodId(model)
   if (!podId) {
-    return NextResponse.json(
-      { error: `${model === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX 2.5'} pod is not running. Deploy or resume it first.` },
-      { status: 409 }
-    )
+    console.log(`[Auto-Deploy] ${model.toUpperCase()} GPU pod is not running. Launching on-demand serverless node...`)
+    const targetTier = model === 'minimax' ? 'ultra_4k' : (body.tier || 'standard')
+    for await (const log of bringUp(targetTier, undefined, model)) {
+      console.log(`[Auto-Deploy] ${log.text}`)
+    }
+    podId = await getRunningPodId(model)
+    if (!podId) {
+      return NextResponse.json(
+        { error: `Could not auto-deploy ${model === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX 2.5'} GPU pod. Please check RunPod balance or deploy in Engines Hub.` },
+        { status: 502 }
+      )
+    }
   }
 
   const maxRefs = model === 'minimax' ? 9 : 5
