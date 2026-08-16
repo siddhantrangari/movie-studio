@@ -506,7 +506,7 @@ export async function* bringUp(
         // has ample room when no network volume is attached.
         volumeInGb: volume ? 0 : isMiniMax ? 200 : 100,
         containerDiskInGb: volume ? 50 : 50,
-        cloudType: volume ? 'SECURE' : 'COMMUNITY',
+        cloudType: 'ALL',
         ports: PORTS,
         env: envObj,
         dockerEntrypoint: ['/bin/bash', '-c'],
