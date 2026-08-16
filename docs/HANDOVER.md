@@ -34,6 +34,14 @@ are in [docs/storage.md](storage.md).
 - **Home dashboard generation progress** — generates clips with immediate
   inline cards below the prompt area featuring pulsing shimmer status, elapsed time,
   error boundaries, and instant in-place MP4 preview and download buttons upon completion.
+- **AI Cinematic Prompt Generator & Photorealism Engine** — integrated OpenAI
+  director-grade prompt builder for Single Scene Prompts, Character Style Sheets,
+  and Multi-Shot Storyboard sequences. Replaces generic buzzwords with physical
+  camera optics (35mm/65mm, 180° shutter blur, Arri/Panavision), natural lighting
+  Kelvin temperatures, micro skin textures, and frame-one kinetic physics.
+- **True High-Resolution Engine (1080P/2K/4K)** — fixed dropdown resolution
+  index binding in Quick Gen to pass true pixel dimensions to ComfyUI, with enhanced
+  anti-CGI / anti-plastic negative conditioning.
 - **The three LTX 2.5 setup requirements**, when provisioning actually runs:
   1. ComfyUI must be **≥ v0.33.1** — v0.30.0's LTXV path only knows Gemma 3;
      LTX 2.5 uses Gemma 4 and fails with `not enough values to unpack
@@ -322,6 +330,8 @@ Health check: `curl -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/admin/v
 RUNPOD_API_KEY=...
 HF_TOKEN=...          # required — LTX 2.5 repo is gated
 ELEVENLABS_API_KEY=...
+OPENAI_API_KEY=...    # required for AI Cinematic Prompt Generator
+OPENAI_MODEL=gpt-4o   # or custom model string
 ADMIN_PASSWORD_HASH=...
 JWT_SECRET=...
 PORT=3000

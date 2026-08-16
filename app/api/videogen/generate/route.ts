@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     prompt, seconds, width, height, seed, referenceStrength, negativePrompt,
-    characterId, cameraMotion, lens,
+    characterId, cameraMotion, lens, lighting, colorPalette,
   } = body
   let { referenceImage } = body
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   const built = buildWorkflow({
-    prompt: composePrompt({ prompt, characterDescription, cameraMotion, lens }),
+    prompt: composePrompt({ prompt, characterDescription, cameraMotion, lens, lighting, colorPalette }),
     negativePrompt,
     seconds: seconds ?? 4,
     width: width ?? 704,

@@ -24,8 +24,10 @@ export const MODELS = {
 const DISTILLED_SIGMAS = '1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0'
 
 const DEFAULT_NEGATIVE =
-  'pc game, console game, video game, cartoon, childish, ugly, blurry, ' +
-  'distorted, low quality, watermark, text, deformed'
+  'pc game, console game, video game, cartoon, 3d render, cgi, anime, illustration, ' +
+  'plastic skin, wax figure, mannequin, airbrushed, oversmoothed skin, fake eyes, ' +
+  'childish, ugly, blurry, distorted, low quality, watermark, text, deformed, extra limbs, ' +
+  'oversaturated, artificial bloom, doll face, bad anatomy, jitter, floating objects'
 
 export function comfyHeaders(base: string) {
   return {

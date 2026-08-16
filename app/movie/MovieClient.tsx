@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { SHOT_PRESETS, GRADES, buildShotPrompt, type Preset } from '@/lib/presets'
 import { RESOLUTIONS, DEFAULT_RESOLUTION } from '@/lib/resolutions'
 import PodPanel from './PodPanel'
+import PromptBuilderModal from '../components/PromptBuilderModal'
 
 type Shot = {
   id: string
@@ -87,8 +88,11 @@ export default function MovieClient() {
   const [characters, setCharacters] = useState<Character[]>([])
   const [voices, setVoices] = useState<Voice[]>([])
   const [films, setFilms] = useState<Film[]>([])
+  const [tab, setTab] = useState<'settings' | 'cast' | 'captions'>('settings')
+  const [activeProjectId, setActiveProjectId] = useState<string>('default-project')
   const [projects, setProjects] = useState<Project[]>([])
-  const [activeProjectId, setActiveProjectId] = useState('default-project')
+  const [showPromptBuilder, setShowPromptBuilder] = useState(false)
+  const [promptBuilderType, setPromptBuilderType] = useState<'scene' | 'character' | 'movie'>('scene')
   const [resolution, setResolution] = useState(DEFAULT_RESOLUTION)
   const [audioMode, setAudioMode] = useState('native')
   const [voiceId, setVoiceId] = useState<string>()
@@ -381,14 +385,38 @@ export default function MovieClient() {
           
           {/* Active Shot Editor Card */}
           <div style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: '1rem', padding: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                   Shot {shots.findIndex(s => s.id === active?.id) + 1} Editor
                 </span>
                 {active?.state === 'done' && <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 800, background: 'rgba(74,222,128,0.1)', padding: '0.15rem 0.5rem', borderRadius: '0.2rem' }}>✓ RENDERED</span>}
               </div>
-              <span style={{ fontSize: '11px', color: GREY }}>{active?.seconds}s duration</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPromptBuilderType('scene')
+                    setShowPromptBuilder(true)
+                  }}
+                  style={{
+                    background: 'rgba(232,185,74,0.12)',
+                    border: '1px solid rgba(232,185,74,0.35)',
+                    color: 'var(--gold)',
+                    borderRadius: '0.4rem',
+                    padding: '0.25rem 0.6rem',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                  }}
+                >
+                  <span>✨ AI Director Shot Prompt</span>
+                </button>
+                <span style={{ fontSize: '11px', color: GREY }}>{active?.seconds}s duration</span>
+              </div>
             </div>
 
             {active && (
@@ -475,7 +503,22 @@ export default function MovieClient() {
                 <p style={{ fontSize: '10px', color: GREY, margin: '0.15rem 0 0' }}>Click a shot card below to edit or reorder.</p>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPromptBuilderType('movie')
+                    setShowPromptBuilder(true)
+                  }}
+                  style={{
+                    fontSize: '11px', padding: '0.45rem 0.85rem', borderRadius: '0.4rem', cursor: 'pointer',
+                    border: '1px solid rgba(232,185,74,0.4)', background: 'rgba(232,185,74,0.15)', color: 'var(--gold)', fontWeight: 800,
+                    display: 'flex', alignItems: 'center', gap: '0.35rem',
+                  }}
+                >
+                  <span>✨ AI Storyboard Generator</span>
+                </button>
+
                 <button onClick={addShot} style={{
                   fontSize: '11px', padding: '0.45rem 0.85rem', borderRadius: '0.4rem', cursor: 'pointer',
                   border: `1px solid ${LINE}`, background: '#070c14', color: '#F2F5FA', fontWeight: 700,
@@ -647,6 +690,34 @@ export default function MovieClient() {
           )}
         </aside>
       </div>
+
+      {/* AI Cinematic Prompt Generator Modal */}
+      <PromptBuilderModal
+        isOpen={showPromptBuilder}
+        onClose={() => setShowPromptBuilder(false)}
+        initialType={promptBuilderType}
+        onApplyScene={(data) => {
+          if (active) {
+            update(active.id, { description: data.prompt })
+          }
+        }}
+        onApplyMovie={(data) => {
+          if (data.title) setTitle(data.title)
+          if (data.shots && data.shots.length > 0) {
+            const newShots: Shot[] = data.shots.map((s, idx) => ({
+              id: uid(),
+              order: idx + 1,
+              description: s.prompt,
+              seconds: s.seconds || 6,
+              state: 'idle' as const,
+            }))
+            setShots(newShots)
+            shotsRef.current = newShots
+            setActiveId(newShots[0].id)
+            persist(newShots)
+          }
+        }}
+      />
     </main>
   )
 }

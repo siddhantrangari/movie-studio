@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { RESOLUTIONS } from '@/lib/resolutions'
+import PromptBuilderModal from './components/PromptBuilderModal'
 
 type PodData = {
   id: string
@@ -151,6 +152,8 @@ export default function VideoGenClient() {
   // Modals / dropdown flags
   const [showCharModal, setShowCharModal] = useState(false)
   const [showPodDrawer, setShowPodDrawer] = useState(false)
+  const [showPromptBuilder, setShowPromptBuilder] = useState(false)
+  const [promptBuilderType, setPromptBuilderType] = useState<'scene' | 'character' | 'movie'>('scene')
   const [inspectProject, setInspectProject] = useState<typeof PUBLISHED_PROJECTS[0] | null>(null)
 
   // New character form state
@@ -290,7 +293,7 @@ export default function VideoGenClient() {
   const generate = useCallback(async (opts: { prompt: string; label: string; seconds: number }) => {
     setSubmitting(true)
     setGenError(null)
-    const r = RESOLUTIONS[aspectRatio]
+    const r = RESOLUTIONS[genRes] ?? RESOLUTIONS[0]
     
     try {
       const res = await fetch('/api/videogen/generate', {
@@ -326,7 +329,7 @@ export default function VideoGenClient() {
     } finally {
       setSubmitting(false)
     }
-  }, [aspectRatio, selectedCharacterId, cameraMotion, colorPalette, lighting, selectedModel, activeProjectId])
+  }, [genRes, selectedCharacterId, cameraMotion, colorPalette, lighting, selectedModel, activeProjectId])
 
   // Poll pending
   const pending = jobs.filter(j => j.state === 'queued' || j.state === 'running')
@@ -617,6 +620,35 @@ export default function VideoGenClient() {
                       </select>
                     </div>
                   </div>
+                </div>
+
+                {/* Prompt toolbar & AI Generator */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, margin: 0 }}>
+                    Scene Prompt
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromptBuilderType('scene')
+                      setShowPromptBuilder(true)
+                    }}
+                    style={{
+                      background: 'rgba(232,185,74,0.12)',
+                      border: '1px solid rgba(232,185,74,0.35)',
+                      color: 'var(--gold)',
+                      borderRadius: '0.4rem',
+                      padding: '0.25rem 0.6rem',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    <span>✨ AI Director Prompt</span>
+                  </button>
                 </div>
 
                 {/* Prompt input */}
@@ -929,7 +961,31 @@ export default function VideoGenClient() {
 
               {/* Add Character Form */}
               <div style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1.25rem', marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0, color: '#F2F5FA' }}>+ Add New Character</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0, color: '#F2F5FA' }}>+ Add New Character</h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromptBuilderType('character')
+                      setShowPromptBuilder(true)
+                    }}
+                    style={{
+                      background: 'rgba(232,185,74,0.12)',
+                      border: '1px solid rgba(232,185,74,0.35)',
+                      color: 'var(--gold)',
+                      borderRadius: '0.4rem',
+                      padding: '0.3rem 0.65rem',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                    }}
+                  >
+                    <span>✨ AI Character Generator</span>
+                  </button>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div>
                     <label style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>Character Name</label>
@@ -1186,6 +1242,25 @@ export default function VideoGenClient() {
           </div>
         </div>
       )}
+
+      {/* Modal 5: AI Cinematic Prompt Generator */}
+      <PromptBuilderModal
+        isOpen={showPromptBuilder}
+        onClose={() => setShowPromptBuilder(false)}
+        initialType={promptBuilderType}
+        onApplyScene={(data) => {
+          setGenPrompt(data.prompt)
+          if (data.cameraMotion) setCameraMotion(data.cameraMotion)
+          if (data.lighting) setLighting(data.lighting)
+          if (data.colorPalette) setColorPalette(data.colorPalette)
+        }}
+        onApplyCharacter={(data) => {
+          setCharName(data.name)
+          setCharDesc(data.description)
+          setCharNotes(data.turnaroundPrompt)
+          setActiveTab('characters')
+        }}
+      />
     </div>
   )
 }
