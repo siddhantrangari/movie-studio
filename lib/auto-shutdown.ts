@@ -65,8 +65,19 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
       }
 
       const now = Date.now()
+      const uptimeSec = Number((pod.runtime as { uptimeInSeconds?: number })?.uptimeInSeconds || 0)
+      const isMiniMaxPod = podName.includes('minimax')
+      const warmupWindowSec = isMiniMaxPod ? 1500 : 900 // 25min for MiniMax (65GB weights), 15min for LTX
 
-      // If we don't have an activity record yet, initialize it to now to give it a full 5-minute window
+      // 1. Initial Warmup / Provisioning Protection:
+      // While the pod is younger than the warmup window, keep it alive so model weight downloads
+      // are never killed prematurely (even if ComfyUI is up with 0 queued jobs).
+      if (uptimeSec < warmupWindowSec) {
+        podLastActivity.set(podId, now)
+        continue
+      }
+
+      // If we don't have an activity record yet, initialize it to now to give it a full idle window
       if (!podLastActivity.has(podId)) {
         podLastActivity.set(podId, now)
         continue
@@ -76,7 +87,7 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
       const idleTimeMs = now - lastActive
       const maxIdleMs = autoShutdownMinutes * 60 * 1000
 
-      // If idle time exceeds threshold, check ComfyUI queue before shutting down
+      // 2. Inactivity Evaluation (only evaluated after warmup window has passed):
       if (idleTimeMs >= maxIdleMs) {
         try {
           const base = podBase(podId)
@@ -97,22 +108,12 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
             }
           }
 
-          // Pod is verified completely idle for >= 5 minutes with 0 jobs -> auto-terminate to save billing!
-          console.log(`[Auto-Shutdown] ⏱️ Pod ${podId} (${pod.name}) idle for ${Math.round(idleTimeMs / 1000)}s (threshold: ${autoShutdownMinutes}m). Terminating pod to prevent idle charges...`)
+          // Pod is verified completely idle past warmup window with 0 jobs -> auto-terminate to save billing!
+          console.log(`[Auto-Shutdown] ⏱️ Pod ${podId} (${pod.name}) idle for ${Math.round(idleTimeMs / 1000)}s (uptime: ${uptimeSec}s, threshold: ${autoShutdownMinutes}m). Terminating pod to prevent idle charges...`)
           await terminatePod(podId)
+          podLastActivity.delete(podId)
+          terminated.push(podId)
         } catch (err: any) {
-          // MiniMax H3 downloads ~65GB of weights on first boot — allow 25 minutes before any action.
-          // LTX 2.5 downloads ~37GB — allow 15 minutes.
-          const uptimeSec = Number((pod.runtime as { uptimeInSeconds?: number })?.uptimeInSeconds || 0)
-          const isMiniMaxPod = String(pod.name || '').includes('minimax')
-          const warmupWindowSec = isMiniMaxPod ? 1500 : 900 // 25min for MiniMax, 15min for LTX
-
-          if (uptimeSec < warmupWindowSec) {
-            console.log(`[Auto-Shutdown] Pod ${podId} (${pod.name}) is still downloading weights / provisioning (uptime: ${uptimeSec}s, window: ${warmupWindowSec}s). Keeping alive...`)
-            podLastActivity.set(podId, now)
-            continue
-          }
-
           // If ComfyUI is completely unreachable/dead past warmup window and idle threshold exceeded, terminate
           console.log(`[Auto-Shutdown] Pod ${podId} unreachable and idle for ${Math.round(idleTimeMs / 1000)}s (uptime: ${uptimeSec}s). Terminating...`)
           await terminatePod(podId)
