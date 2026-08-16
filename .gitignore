@@ -40,6 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# scratch / local artifacts
+scratch/
+showcase/
+
 # Pod lifecycle state
 scripts/.pod-state
 
