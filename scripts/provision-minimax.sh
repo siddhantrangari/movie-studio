@@ -171,14 +171,21 @@ fetch() {   # fetch <url> <dest-dir> <name>
 
 do_models() {
     local models="$COMFY/models"
-    mkdir -p "$models/diffusion_models" "$models/text_encoders" "$models/vae" "$models/checkpoints"
+    mkdir -p "$models/diffusion_models" "$models/text_encoders" "$models/vae" "$models/checkpoints" "$models/clip"
 
     log "Checking MiniMax Hailuo 3 weights"
     # MiniMax Hailuo 3 INT8 transformer & components
     fetch "https://huggingface.co/Kijai/MiniMax-Hailuo-03-ComfyUI/resolve/main/minimax-h3-int8.safetensors" \
           "$models/diffusion_models" "minimax-h3-int8.safetensors"
 
+    fetch "https://huggingface.co/Comfy-Org/MiniMax_Hailuo_03_repackaged/resolve/main/split_files/text_encoders/t5xxl_fp8_e4m3fn.safetensors" \
+          "$models/text_encoders" "t5xxl_fp8_e4m3fn.safetensors"
+
+    fetch "https://huggingface.co/Comfy-Org/MiniMax_Hailuo_03_repackaged/resolve/main/split_files/vae/vae.safetensors" \
+          "$models/vae" "vae.safetensors"
+
     ln -sfn ../diffusion_models/minimax-h3-int8.safetensors "$models/checkpoints/minimax-h3-int8.safetensors"
+    ln -sfn ../text_encoders/t5xxl_fp8_e4m3fn.safetensors "$models/clip/t5xxl_fp8_e4m3fn.safetensors"
     ok "MiniMax Hailuo 3 models in place"
 }
 
