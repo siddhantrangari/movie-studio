@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   const diskGb = Number(pod?.containerDiskInGb ?? 0) + Number(pod?.volumeInGb ?? 0)
   const storage = (diskGb * 0.1) / 730
 
-  const idleInfo = pod ? getPodIdleInfo(pod.id) : null
+  const idleInfo = pod ? getPodIdleInfo(String(pod.id)) : null
 
   return NextResponse.json({
     model,
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
       : null,
     pods: allPods.map((p) => ({
       ...p,
-      idleInfo: getPodIdleInfo(p.id),
+      idleInfo: getPodIdleInfo(String(p.id)),
     })),
     volumes,
     account,
@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
     if (!volumeName || !newSizeGb) {
       return NextResponse.json({ error: 'volumeName and newSizeGb are required' }, { status: 400 })
     }
+    const res = await createVolume(volumeName, Number(newSizeGb), dataCenterId || 'EU-RO-1')
     if (!res.ok) return NextResponse.json({ error: res.error || 'Create failed' }, { status: 500 })
     return NextResponse.json({ ok: true, id: res.id, message: `Volume ${volumeName} created successfully!` })
   }
