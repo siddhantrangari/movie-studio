@@ -614,6 +614,12 @@ async function* awaitProvisioning(
       return
     }
 
+    if (!sawLog && i >= 30) {
+      yield { level: 'warn', text: 'Container image pull stalled on this host (5 min) — auto-terminating to find a responsive host.' }
+      outcome.hostBroken = true
+      return
+    }
+
     if (!sawLog && i > 0 && i % 6 === 0) {
       const mins = Math.max(1, Math.round(((i + 1) * 10) / 60))
       yield {
@@ -623,7 +629,7 @@ async function* awaitProvisioning(
     }
   }
 
-  yield { level: 'warn', text: 'Timed out after 30 min. The pod is still up and billing — inspect it or shut it down.' }
+  yield { level: 'warn', text: 'Timed out. The pod is being shut down.' }
 }
 
 export async function* tearDown(targetPodId?: string, model: PodModel = 'ltx25'): AsyncGenerator<LogLine> {
