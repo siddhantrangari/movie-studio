@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyPassword, signToken, getAdminCookieOptions } from '@/lib/auth'
-import { getUserByEmail } from '@/lib/users'
+import { getUserByEmailAsync, getUserByEmail } from '@/lib/users'
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     }
 
     const targetEmail = email ? email.trim().toLowerCase() : 'admin@veostudio.com'
-    const user = getUserByEmail(targetEmail)
+    const user = (await getUserByEmailAsync(targetEmail)) || getUserByEmail(targetEmail)
 
     if (!user) {
       await new Promise((r) => setTimeout(r, 400))

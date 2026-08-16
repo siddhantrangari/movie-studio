@@ -82,8 +82,51 @@ export function toPublicUser(user: User): PublicUser {
   return publicUser
 }
 
+export async function getUsersAsync(): Promise<PublicUser[]> {
+  try {
+    const { query } = await import('./db')
+    const res = await query('SELECT * FROM users ORDER BY created_at DESC')
+    if (res.rows.length > 0) {
+      return res.rows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        role: r.role as UserRole,
+        status: r.status as UserStatus,
+        createdAt: Number(r.created_at),
+        approvedAt: r.approved_at ? Number(r.approved_at) : undefined,
+      }))
+    }
+  } catch {}
+  return readUsersRaw().map(toPublicUser)
+}
+
 export function getUsers(): PublicUser[] {
   return readUsersRaw().map(toPublicUser)
+}
+
+export async function getUserByEmailAsync(email: string): Promise<User | null> {
+  const normalized = email.trim().toLowerCase()
+  try {
+    const { query } = await import('./db')
+    const res = await query('SELECT * FROM users WHERE LOWER(email) = $1 LIMIT 1', [normalized])
+    if (res.rows.length > 0) {
+      const r = res.rows[0]
+      return {
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        passwordHash: r.password_hash,
+        role: r.role as UserRole,
+        status: r.status as UserStatus,
+        createdAt: Number(r.created_at),
+        approvedAt: r.approved_at ? Number(r.approved_at) : undefined,
+        resetToken: r.reset_token,
+        resetTokenExpiry: r.reset_token_expiry ? Number(r.reset_token_expiry) : undefined,
+      }
+    }
+  } catch {}
+  return readUsersRaw().find((u) => u.email.toLowerCase() === normalized) ?? null
 }
 
 export function getUserByEmail(email: string): User | null {
@@ -93,6 +136,49 @@ export function getUserByEmail(email: string): User | null {
 
 export function getUserById(id: string): User | null {
   return readUsersRaw().find((u) => u.id === id) ?? null
+}
+
+export async function createUserAsync(email: string, passwordHash: string, name: string): Promise<User> {
+  const normalized = email.trim().toLowerCase()
+  const users = readUsersRaw()
+
+  if (users.some((u) => u.email.toLowerCase() === normalized)) {
+    throw new Error('An account with this email already exists.')
+  }
+
+  const isFirst = users.length === 0
+  const newUser: User = {
+    id: crypto.randomBytes(8).toString('hex'),
+    email: normalized,
+    name: name.trim() || 'User',
+    passwordHash,
+    role: isFirst ? 'admin' : 'user',
+    status: isFirst ? 'approved' : 'pending',
+    createdAt: Date.now(),
+    approvedAt: isFirst ? Date.now() : undefined,
+  }
+
+  try {
+    const { query } = await import('./db')
+    await query(
+      `INSERT INTO users (id, email, name, password_hash, role, status, created_at, approved_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        newUser.id,
+        newUser.email,
+        newUser.name,
+        newUser.passwordHash,
+        newUser.role,
+        newUser.status,
+        newUser.createdAt,
+        newUser.approvedAt || null,
+      ]
+    )
+  } catch {}
+
+  users.push(newUser)
+  writeUsersRaw(users)
+  return newUser
 }
 
 export function createUser(email: string, passwordHash: string, name: string): User {
@@ -117,6 +203,25 @@ export function createUser(email: string, passwordHash: string, name: string): U
 
   users.push(newUser)
   writeUsersRaw(users)
+
+  import('./db').then(({ query }) => {
+    query(
+      `INSERT INTO users (id, email, name, password_hash, role, status, created_at, approved_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        newUser.id,
+        newUser.email,
+        newUser.name,
+        newUser.passwordHash,
+        newUser.role,
+        newUser.status,
+        newUser.createdAt,
+        newUser.approvedAt || null,
+      ]
+    ).catch(() => {})
+  }).catch(() => {})
+
   return newUser
 }
 
@@ -133,6 +238,14 @@ export function updateUserStatus(id: string, status: UserStatus, role?: UserRole
   }
 
   writeUsersRaw(users)
+
+  import('./db').then(({ query }) => {
+    query(
+      `UPDATE users SET status = $1, role = $2, approved_at = $3 WHERE id = $4`,
+      [status, role || users[idx].role, users[idx].approvedAt || null, id]
+    ).catch(() => {})
+  }).catch(() => {})
+
   return users[idx]
 }
 
@@ -142,6 +255,11 @@ export function deleteUser(id: string): boolean {
   if (filtered.length === users.length) return false
 
   writeUsersRaw(filtered)
+
+  import('./db').then(({ query }) => {
+    query(`DELETE FROM users WHERE id = $1`, [id]).catch(() => {})
+  }).catch(() => {})
+
   return true
 }
 
