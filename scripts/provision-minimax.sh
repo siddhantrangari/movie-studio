@@ -78,7 +78,7 @@ probe_speed() {
     log "Measuring this host's download speed"
     rm -f /tmp/probe.* 2>/dev/null || true
     for i in $(seq 0 7); do
-        curl -s --max-time 6 -r "$((i*20000000))-$((i*20000000+19999999))" \
+        curl -s -L --max-time 6 -r "$((i*20000000))-$((i*20000000+19999999))" \
             ${HF_TOKEN:+-H "Authorization: Bearer ${HF_TOKEN}"} "$url" -o "/tmp/probe.$i" &
     done
     wait
