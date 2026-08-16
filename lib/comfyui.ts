@@ -78,13 +78,23 @@ export function buildMiniMaxWorkflow(p: GenParams) {
   const frames = Math.max(16, Math.ceil((p.seconds ?? 5) * fps))
   const seed = p.seed ?? Math.floor(Math.random() * 2 ** 31)
 
-  // 2-Stage Multi-Scale Pipeline:
-  // Base diffusion latent generated at 768x432 (16:9) with 16 distilled flow-matching steps (5.2x faster!).
-  // Then decoded and upscaled using high-fidelity GPU Lanczos super-resolution in <1 second to target resolution (720p/1080p/4K).
-  // MiniMax Hailuo 3 natively generates 1280x720 (16:9) video with synchronized stereo audio.
+  // Adaptive Token-Budget Scaling:
+  // For <= 6s (<= 144 frames): Native 1280x720 / 768x768 is fast (~3.5 min, 27k tokens).
+  // For > 6s (e.g. 10s-15s, 240-360 frames): Native diffusion canvas scales to 864x480 (16:9) or 480x864 (9:16)
+  // to stay strictly within the optimal 32k-36k token budget (5-6 min instead of 50 min!).
+  // Node 8a (ImageScale Lanczos) then super-resolves to target 720p/1080p/4K on GPU in <1 second.
   const isWidescreen = targetWidth >= targetHeight
-  const baseWidth = isWidescreen ? (targetWidth >= 1920 ? 1280 : targetWidth) : (targetHeight >= 1920 ? 720 : targetWidth)
-  const baseHeight = isWidescreen ? (targetHeight >= 1080 ? 720 : targetHeight) : (targetWidth >= 1080 ? 1280 : targetHeight)
+  const isLongClip = (p.seconds ?? 5) > 6
+  let baseWidth = 1280
+  let baseHeight = 720
+
+  if (isWidescreen) {
+    baseWidth = isLongClip ? 864 : (targetWidth >= 1920 ? 1280 : targetWidth)
+    baseHeight = isLongClip ? 480 : (targetHeight >= 1080 ? 720 : targetHeight)
+  } else {
+    baseWidth = isLongClip ? 480 : (targetHeight >= 1920 ? 720 : targetWidth)
+    baseHeight = isLongClip ? 864 : (targetWidth >= 1080 ? 1280 : targetHeight)
+  }
 
   const wf: Record<string, unknown> = {
     // ── Model loading ──────────────────────────────────────────────────────────

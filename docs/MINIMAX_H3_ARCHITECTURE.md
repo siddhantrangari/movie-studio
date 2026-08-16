@@ -65,7 +65,28 @@ All model weights are stored on the studio's persistent **200 GB Network Volume 
 
 ## 4. Benchmark & Cost Metrics
 
-* **Compute Hardware**: NVIDIA L40 (48GB VRAM) or RTX 6000 Ada (48GB VRAM).
-* **Render Speed (5-Second 4K Master)**: ~3.5 to 4.0 minutes.
-* **Compute Cost per 5-Second 4K Clip**: **~$0.046** (4.6 cents).
-* **Compute Cost per 1-Minute 4K Film (12 shots)**: **~$0.55** (55 cents).
+* **Compute Hardware**: NVIDIA RTX A6000 (48GB @ $0.33/hr) / RTX 6000 Ada (48GB @ $1.49/hr).
+* **Render Speed (5-Second 4K Master)**: ~3.5 minutes on RTX A6000 (~1.5 min on Ada).
+* **Render Speed (15-Second 4K Master)**: ~5.5 to 6.5 minutes on RTX A6000 (~2.2 min on Ada).
+* **Compute Cost per 5-Second 4K Clip**: **~$0.019** (1.9 cents).
+* **Compute Cost per 15-Second 4K Clip**: **~$0.035** (3.5 cents).
+* **Compute Cost per 1-Minute 4K Film (4 × 15s shots)**: **~$0.14** (14 cents).
+
+---
+
+## 5. Adaptive Token-Budget Scaling & 15-Second Optimization
+
+In 3D Video Diffusion Transformers (DiT), attention compute scales quadratically with spatio-temporal tokens:
+$$\text{Tokens} = \left(\frac{\text{Frames}}{4}\right) \times \left(\frac{\text{Height}}{32}\right) \times \left(\frac{\text{Width}}{32}\right)$$
+
+### Official Presets & Latent Allocation:
+* **Short Clips (≤ 6s, 120–144 frames)**:
+  * Latent Canvas: **$1280 \times 720$** ($27\text{k tokens}$).
+  * Sampling Time: **~3.5 minutes**.
+* **Long Clips (7s–15s, 168–360 frames)**:
+  * Latent Canvas: **$864 \times 480$** ($32\text{k tokens}$) or **$960 \times 544$** ($36\text{k tokens}$).
+  * Keeps total attention load within the optimal 36k ceiling to avoid quadratic $O(N^2)$ slowdowns.
+  * Sampling Time: **~5 to 6 minutes**.
+* **Instant 4K Super-Resolution Pass**:
+  * Decoded frames are passed into Node `8a` (`ImageScale` with Lanczos) and post-processed with high-precision optical unsharp filters to deliver **3840×2160 (4K Ultra HD)** master MP4s in <15 seconds.
+
