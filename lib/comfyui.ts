@@ -114,7 +114,7 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     '8a': {
       class_type: 'ImageScale',
       inputs: {
-        images: ['8', 0],
+        image: ['8', 0],
         upscale_method: 'lanczos',
         width: targetWidth,
         height: targetHeight,
