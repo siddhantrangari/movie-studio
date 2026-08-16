@@ -218,6 +218,36 @@ export default function VideoGenClient() {
   const [charTurnaroundFiles, setCharTurnaroundFiles] = useState<File[]>([])
   const [charVoiceFile, setCharVoiceFile] = useState<File | null>(null)
   const [savingChar, setSavingChar] = useState(false)
+  const [upscalingJobs, setUpscalingJobs] = useState<Record<string, boolean>>({})
+
+  const handleUpscaleClip = async (jobId: string, filename: string) => {
+    if (upscalingJobs[jobId]) return
+    setUpscalingJobs((prev) => ({ ...prev, [jobId]: true }))
+    toast.info('✨ Upscaling video to 4K Ultra HD (Real-ESRGAN / Lanczos)...')
+    try {
+      const res = await fetch('/api/videogen/upscale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, targetResolution: '4k' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upscaling failed')
+
+      setJobs((prev) =>
+        prev.map((j) => {
+          if (j.id === jobId) {
+            return { ...j, filename: data.filename, label: `${j.label || 'Shot'} (✨ 4K Ultra HD)` }
+          }
+          return j
+        })
+      )
+      toast.success('🎉 4K Ultra HD Upscale Complete!')
+    } catch (err: any) {
+      toast.error(`Upscale failed: ${err.message}`)
+    } finally {
+      setUpscalingJobs((prev) => ({ ...prev, [jobId]: false }))
+    }
+  }
 
   // Fetch status & data
   const fetchStatus = useCallback(async () => {
@@ -1107,15 +1137,48 @@ export default function VideoGenClient() {
                           </p>
                         </div>
 
-                        {/* Download when done */}
+                        {/* Actions when done */}
                         {j.state === 'done' && j.filename && (
-                          <div style={{ padding: '0 0.75rem 0.65rem', display: 'flex', gap: '0.5rem' }}>
-                            <a
-                              href={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
-                              download
-                              style={{ flex: 1, background: 'var(--gold)', color: '#05080e', textAlign: 'center', textDecoration: 'none', fontWeight: 800, borderRadius: '0.4rem', padding: '0.35rem', fontSize: '11px' }}
+                          <div style={{ padding: '0 0.75rem 0.65rem', display: 'flex', gap: '0.4rem' }}>
+                            <button
+                              onClick={() => handleUpscaleClip(j.id, j.filename!)}
+                              disabled={upscalingJobs[j.id]}
+                              style={{
+                                flex: 1,
+                                background: j.filename.includes('_4k') ? '#059669' : 'linear-gradient(135deg, #8b5cf6, #d946ef)',
+                                color: '#fff',
+                                border: 'none',
+                                fontWeight: 800,
+                                borderRadius: '0.4rem',
+                                padding: '0.35rem',
+                                fontSize: '11px',
+                                cursor: upscalingJobs[j.id] ? 'wait' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.25rem',
+                              }}
                             >
-                              ⬇ Download MP4
+                              {upscalingJobs[j.id] ? '⏳ 4K Super-Res...' : j.filename.includes('_4k') ? '✓ 4K Master' : '✨ Upscale 4K'}
+                            </button>
+                            <a
+                              href={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}&download=1`}
+                              download
+                              style={{
+                                background: 'var(--gold)',
+                                color: '#05080e',
+                                textAlign: 'center',
+                                textDecoration: 'none',
+                                fontWeight: 800,
+                                borderRadius: '0.4rem',
+                                padding: '0.35rem 0.65rem',
+                                fontSize: '11px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              ⬇ MP4
                             </a>
                           </div>
                         )}
