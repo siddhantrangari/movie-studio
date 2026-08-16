@@ -23,7 +23,13 @@ export async function GET() {
         ? {
             id: pod.id,
             name: pod.name,
-            gpuDisplayName: (pod.machine as { gpuDisplayName?: string })?.gpuDisplayName || (pod.gpuName as string) || (pod.gpuTypeId as string) || 'NVIDIA GPU',
+            gpuDisplayName:
+              (pod.gpuDisplayName as string) ||
+              (pod.gpu as { id?: string })?.id ||
+              (pod.machine as { gpuDisplayName?: string })?.gpuDisplayName ||
+              (pod.gpuName as string) ||
+              (pod.gpuTypeId as string) ||
+              'NVIDIA GPU',
             costPerHr: Number(pod.costPerHr || 0),
             status: pod.desiredStatus,
           }

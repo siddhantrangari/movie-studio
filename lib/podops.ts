@@ -141,10 +141,12 @@ export async function listAllPods(): Promise<PodInfo[]> {
     const diskGb = Number(p.containerDiskInGb ?? 0) + Number(p.volumeInGb ?? 0)
     const storage = (diskGb * 0.1) / 730
     const machine = p.machine as { gpuDisplayName?: string } | undefined
+    const gpuObj = p.gpu as { id?: string } | undefined
+    const gpuDisplayName = (p.gpuDisplayName as string) || gpuObj?.id || machine?.gpuDisplayName || (p.gpuName as string) || (p.gpuTypeId as string) || 'NVIDIA GPU'
     return {
       id: String(p.id),
       name: String(p.name ?? 'pod'),
-      gpuDisplayName: machine?.gpuDisplayName || (p.gpuName as string) || (p.gpuTypeId as string) || 'NVIDIA GPU',
+      gpuDisplayName,
       status: String(p.desiredStatus ?? 'UNKNOWN'),
       costPerHr: gpu,
       storagePerHr: Number(storage.toFixed(4)),

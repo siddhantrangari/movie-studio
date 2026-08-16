@@ -43,8 +43,31 @@ export async function GET() {
   // If desiredStatus === 'RUNNING', pod IS running (REST only lists active pods)
   const normalize = (pod: Record<string, unknown> | null) => {
     if (!pod) return null
+    const gpuObj = pod.gpu as { id?: string } | undefined
+    const machineObj = pod.machine as { gpuDisplayName?: string } | undefined
+    const gpuDisplayName =
+      (pod.gpuDisplayName as string) ||
+      gpuObj?.id ||
+      machineObj?.gpuDisplayName ||
+      (pod.gpuName as string) ||
+      (pod.gpuTypeId as string) ||
+      'NVIDIA GPU'
+
+    const upper = gpuDisplayName.toUpperCase()
+    let gpuVram = 24
+    if (upper.includes('A100') || upper.includes('H100') || upper.includes('80GB')) gpuVram = 80
+    else if (upper.includes('A6000') || upper.includes('A40') || upper.includes('L40') || upper.includes('48GB')) gpuVram = 48
+    else if (upper.includes('3090') || upper.includes('4090') || upper.includes('24GB')) gpuVram = 24
+    else if (Number(pod.costPerHr ?? 0) >= 0.50) gpuVram = 48
+
     return {
       ...pod,
+      gpuDisplayName,
+      gpuVram,
+      machine: {
+        gpuDisplayName,
+        ...(typeof pod.machine === 'object' && pod.machine ? pod.machine : {}),
+      },
       // REST API: RUNNING means it's actually running — set runtime so client knows it's ready
       runtime: pod.desiredStatus === 'RUNNING' ? { active: true } : null,
     }

@@ -12,10 +12,41 @@ type PodData = {
   name: string
   desiredStatus: string
   runtime: Record<string, unknown> | null
-  machine?: { gpuDisplayName: string }
-  gpuTypeId: string
+  machine?: { gpuDisplayName?: string }
+  gpu?: { id?: string; gpuUtilPercent?: number; memoryUtilPercent?: number }
+  gpuDisplayName?: string
+  gpuVram?: number
+  gpuTypeId?: string
   costPerHr: number
 } | null
+
+export function getPodGpuName(pod: PodData | Record<string, unknown> | null | undefined): string {
+  if (!pod) return ''
+  const p = pod as Record<string, unknown>
+  const gpuObj = p.gpu as { id?: string } | undefined
+  const machineObj = p.machine as { gpuDisplayName?: string } | undefined
+  return (
+    (p.gpuDisplayName as string) ||
+    gpuObj?.id ||
+    machineObj?.gpuDisplayName ||
+    (p.gpuName as string) ||
+    (p.gpuTypeId as string) ||
+    ''
+  )
+}
+
+export function getPodVram(pod: PodData | Record<string, unknown> | null | undefined): number {
+  if (!pod) return 0
+  const p = pod as Record<string, unknown>
+  if (typeof p.gpuVram === 'number' && p.gpuVram > 0) return p.gpuVram
+  const name = getPodGpuName(pod).toUpperCase()
+  if (name.includes('A100') || name.includes('H100') || name.includes('80GB')) return 80
+  if (name.includes('A6000') || name.includes('A40') || name.includes('L40') || name.includes('48GB')) return 48
+  if (name.includes('3090') || name.includes('4090') || name.includes('24GB') || name.includes('TITAN')) return 24
+  if (name.includes('4080') || name.includes('16GB')) return 16
+  if (typeof p.costPerHr === 'number' && p.costPerHr >= 0.50) return 48
+  return 24
+}
 
 type Project = {
   id: string
@@ -451,8 +482,17 @@ export default function VideoGenClient() {
   const handleResolutionChange = (val: number) => {
     const chosen = RESOLUTIONS[val]
     if (chosen && chosen.w >= 3840) {
-      const gpuName = (pods.ltx?.machine?.gpuDisplayName || (pods.ltx as Record<string, unknown>)?.gpuTypeId as string || '')
-      const isUltra = gpuName.includes('A100') || gpuName.includes('A6000') || gpuName.includes('A40') || gpuName.includes('L40S')
+      const activePod = selectedModel === 'minimax' ? pods.minimax : pods.ltx
+      const gpuName = getPodGpuName(activePod)
+      const vram = getPodVram(activePod)
+      const isUltra =
+        vram >= 48 ||
+        gpuName.includes('A100') ||
+        gpuName.includes('A6000') ||
+        gpuName.includes('A40') ||
+        gpuName.includes('L40') ||
+        Number(activePod?.costPerHr ?? 0) >= 0.50
+
       if (ltxRunning && !isUltra) {
         setShow4kModal(true)
         return
@@ -1496,7 +1536,7 @@ export default function VideoGenClient() {
                       Active Node Detected
                     </h4>
                     <p style={{ margin: '0.15rem 0 0', fontSize: '11px', color: '#cbd5e1' }}>
-                      A GPU node ({promptDeployConflict.existingPod?.machine?.gpuDisplayName || 'NVIDIA GPU'}) is currently <strong>RUNNING</strong>.
+                      A GPU node ({getPodGpuName(promptDeployConflict.existingPod) || 'NVIDIA GPU'} · {getPodVram(promptDeployConflict.existingPod)}GB VRAM) is currently <strong>RUNNING</strong>.
                     </p>
                   </div>
                 </div>
@@ -1550,11 +1590,11 @@ export default function VideoGenClient() {
                           ● ACTIVE COMPUTE NODE (RUNNING)
                         </span>
                         <h4 style={{ margin: '0.2rem 0 0', fontSize: '13px', fontWeight: 800, color: '#F2F5FA' }}>
-                          {pods.ltx?.machine?.gpuDisplayName || 'NVIDIA GPU Node'}
+                          {getPodGpuName(pods.ltx) || 'NVIDIA RTX A6000'} ({getPodVram(pods.ltx)}GB VRAM)
                         </h4>
                       </div>
                       <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--gold)', background: '#0e182e', padding: '0.25rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
-                        ${Number(pods.ltx?.costPerHr || 0.22).toFixed(2)}/hr
+                        ${Number(pods.ltx?.costPerHr || 0.54).toFixed(2)}/hr
                       </span>
                     </div>
 
@@ -1680,7 +1720,7 @@ export default function VideoGenClient() {
                 Generating <strong>4K (3840×2160)</strong> raw video requires an <strong>Ultra 4K GPU with 48GB or 80GB VRAM</strong> (NVIDIA RTX A6000, A40, L40S, or A100).
               </p>
               <p style={{ margin: 0, color: '#f87171' }}>
-                Your currently active GPU has <strong>24GB VRAM</strong>, which will run out of CUDA memory during 4K diffusion.
+                Your currently active GPU ({getPodGpuName(pods.ltx) || 'Standard Node'}) has <strong>{getPodVram(pods.ltx)}GB VRAM</strong>, which is lower than the 48GB required for raw 4K direct diffusion.
               </p>
             </div>
 
