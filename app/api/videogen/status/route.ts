@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
                 const arrayBuf = await res.arrayBuffer()
                 const buf = Buffer.from(arrayBuf)
                 if (buf.length > 0) {
-                  await persistClip(st.filename!, buf)
+                  await persistClip(st.filename!, buf, { projectId: updated?.projectId })
                 }
               }
             })

@@ -174,13 +174,22 @@ export default function UsageDashboard() {
     }
   }
 
-  const handleDeployClick = (tier: 'standard' | 'ultra_4k') => {
-    const runningPod = data?.runpod?.pods?.find((p) => p.status === 'RUNNING')
+  const handleDeployClick = (tier: 'standard' | 'ultra_4k' | 'minimax') => {
+    if (tier === 'minimax') {
+      const runningMiniMax = data?.runpod?.pods?.find((p) => p.status === 'RUNNING' && p.name?.includes('minimax'))
+      if (runningMiniMax) {
+        toast.info(`MiniMax Hailuo 3 pod ${runningMiniMax.id} is already running.`)
+        return
+      }
+      executePodOperation('up', { tier: 'ultra_4k', model: 'minimax' } as any)
+      return
+    }
+    const runningPod = data?.runpod?.pods?.find((p) => p.status === 'RUNNING' && !p.name?.includes('minimax'))
     if (runningPod) {
       setConflictPrompt({ targetTier: tier, existingPod: runningPod })
       return
     }
-    executePodOperation('up', { tier })
+    executePodOperation('up', { tier, model: 'ltx25' } as any)
   }
 
   // Infrastructure Simulator state
@@ -557,7 +566,7 @@ export default function UsageDashboard() {
                 boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
               }}
             >
-              🚀 Deploy Standard (24GB VRAM)
+              🚀 Deploy LTX Standard (24GB)
             </button>
 
             <button
@@ -575,7 +584,25 @@ export default function UsageDashboard() {
                 boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
               }}
             >
-              🔥 Deploy Ultra 4K (48GB/80GB)
+              🔥 Deploy LTX Ultra 4K (48GB)
+            </button>
+
+            <button
+              onClick={() => handleDeployClick('minimax')}
+              disabled={isPerformingAction}
+              style={{
+                background: 'linear-gradient(135deg, #a855f7, #7c3aed)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '0.4rem',
+                padding: '0.5rem 0.85rem',
+                fontSize: '11px',
+                fontWeight: 900,
+                cursor: isPerformingAction ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 12px rgba(168, 85, 247, 0.35)',
+              }}
+            >
+              🟣 Deploy MiniMax Hailuo 3 (48GB+)
             </button>
           </div>
         </div>
@@ -591,6 +618,7 @@ export default function UsageDashboard() {
               <thead>
                 <tr style={{ borderBottom: '1px solid #1a2840', color: '#64748b', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Pod ID</th>
+                  <th style={{ padding: '0.6rem 0.75rem' }}>AI Model Engine</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Machine / GPU Model</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Status</th>
                   <th style={{ padding: '0.6rem 0.75rem' }}>Hourly Compute</th>
@@ -601,10 +629,44 @@ export default function UsageDashboard() {
               <tbody>
                 {pods.map((p) => {
                   const isRunning = p.status === 'RUNNING'
+                  const isMiniMax = p.name?.toLowerCase().includes('minimax')
                   return (
                     <tr key={p.id} style={{ borderBottom: '1px solid rgba(26,40,64,0.4)', color: '#cbd5e1' }}>
                       <td style={{ padding: '0.6rem 0.75rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--gold, #E8B94A)' }}>
                         {p.id}
+                      </td>
+                      <td style={{ padding: '0.6rem 0.75rem' }}>
+                        {isMiniMax ? (
+                          <span style={{
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '0.35rem',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            background: 'rgba(168, 85, 247, 0.15)',
+                            color: '#c084fc',
+                            border: '1px solid rgba(168, 85, 247, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                          }}>
+                            🟣 MiniMax Hailuo 3 (48GB+)
+                          </span>
+                        ) : (
+                          <span style={{
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '0.35rem',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#34d399',
+                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                          }}>
+                            🟢 LTX-Video 2.5
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#F2F5FA' }}>
                         {p.gpuDisplayName}

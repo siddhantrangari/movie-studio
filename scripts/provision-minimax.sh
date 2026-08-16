@@ -110,76 +110,41 @@ do_code() {
 }
 
 # ── Phase: models ─────────────────────────────────────────────────────────────
-CHUNKS=8
+
+# Install aria2 if not present (it's usually already on RunPod images)
+ensure_aria2() {
+    command -v aria2c &>/dev/null && return
+    apt-get install -y -q aria2 2>/dev/null || pip install aria2p -q 2>/dev/null || true
+}
 
 fetch() {   # fetch <url> <dest-dir> <name>
-    local url="$1" dest="$2" name="$3" total i start end pids=() failed=0
-    local cur pct last=0 rate
+    local url="$1" dest="$2" name="$3"
     if [ -s "$dest/$name" ]; then
         ok "$name already present"
         return
     fi
     mkdir -p "$dest"
+    log "Downloading $name"
+    ensure_aria2
 
-    total=$(curl -sIL ${HF_TOKEN:+-H "Authorization: Bearer ${HF_TOKEN}"} "$url" \
-            | tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v+0}')
-
-    if [ "$total" -gt 0 ] 2>/dev/null; then
-        log "Downloading $name ($((total/1048576)) MB, ${CHUNKS} parallel streams)"
-        local size=$(( (total + CHUNKS - 1) / CHUNKS ))
-        for i in $(seq 0 $((CHUNKS - 1))); do
-            start=$(( i * size ))
-            end=$(( start + size - 1 ))
-            [ "$end" -ge "$total" ] && end=$(( total - 1 ))
-            curl -sL --fail --retry 5 --retry-delay 3 -r "${start}-${end}" \
-                ${HF_TOKEN:+-H "Authorization: Bearer ${HF_TOKEN}"} "$url" \
-                -o "$dest/$name.part$i" &
-            pids+=($!)
-        done
-    else
-        log "Downloading $name (single stream)"
-        curl -C - -sL --fail --retry 5 --retry-delay 3 \
-            ${HF_TOKEN:+-H "Authorization: Bearer ${HF_TOKEN}"} "$url" -o "$dest/$name.part0" &
-        pids+=($!)
+    local aria_args=(
+        --dir="$dest"
+        --out="$name"
+        --split=8
+        --max-connection-per-server=8
+        --min-split-size=50M
+        --max-tries=10
+        --retry-wait=5
+        --continue=true
+        --console-log-level=warn
+        --summary-interval=10
+        --file-allocation=none
+    )
+    if [ -n "${HF_TOKEN:-}" ]; then
+        aria_args+=(--header="Authorization: Bearer ${HF_TOKEN}")
     fi
 
-    local alive
-    while :; do
-        alive=0
-        for i in "${pids[@]}"; do kill -0 "$i" 2>/dev/null && alive=1; done
-        [ "$alive" -eq 1 ] || break
-        sleep 10
-        cur=$(du -cb "$dest/$name".part* 2>/dev/null | tail -1 | cut -f1 || echo 0)
-        rate=$(( (cur - last) / 10485760 ))
-        last=$cur
-        if [ "$total" -gt 0 ] 2>/dev/null; then
-            pct=$(( cur * 100 / total ))
-            printf '    %s  %s / %s MB (%s%%) at ~%s MB/s\n' \
-                "$name" "$((cur/1048576))" "$((total/1048576))" "$pct" "$rate"
-        else
-            printf '    %s  %s MB\n' "$name" "$((cur/1048576))"
-        fi
-    done
-
-    for i in "${pids[@]}"; do wait "$i" || failed=1; done
-    [ "$failed" -eq 0 ] || { echo "ERROR: download failed for $name"; exit 1; }
-
-    # Assemble: write each part directly into its byte offset in the output file,
-    # then delete it immediately.  Peak disk = file-size + one-chunk-size,
-    # vs the old cat strategy which needed 2× file size simultaneously.
-    # Pre-allocate the output file to avoid sparse-file issues.
-    if [ "$total" -gt 0 ] 2>/dev/null; then
-        truncate -s "$total" "$dest/$name" 2>/dev/null || dd if=/dev/zero of="$dest/$name" bs=1 count=0 seek="$total" 2>/dev/null
-    fi
-    local bs=1048576  # 1 MB
-    for i in $(seq 0 $((CHUNKS - 1))); do
-        local pf="$dest/$name.part$i"
-        [ -f "$pf" ] || continue
-        local chunk_start=$(( i * size ))
-        local seek_blocks=$(( chunk_start / bs ))
-        dd if="$pf" of="$dest/$name" bs=$bs seek=$seek_blocks conv=notrunc 2>/dev/null
-        rm -f "$pf"
-    done
+    aria2c "${aria_args[@]}" "$url"
     ok "$name downloaded"
 }
 

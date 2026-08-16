@@ -48,13 +48,42 @@ export async function putFilm(key: string, filePath: string, contentType = 'vide
   )
 }
 
-export async function signedUrl(key: string, expiresIn = 3600): Promise<string | null> {
+export async function signedUrl(
+  filename: string,
+  expiresIn = 3600,
+  options?: { userId?: string; projectId?: string }
+): Promise<string | null> {
   const r2 = getR2Client()
   if (!r2) return null
 
+  const userId = options?.userId || 'admin'
+  const projectId = options?.projectId || 'default-project'
+
+  // Candidate paths to check in R2
+  const candidateKeys = [
+    filename,
+    `films/${filename}`,
+    `projects/${projectId}/${filename}`,
+    `users/${userId}/projects/${projectId}/${filename}`,
+  ]
+
+  for (const key of candidateKeys) {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: r2.bucket,
+        Key: key,
+      })
+      const url = await getSignedUrl(r2.client, command, { expiresIn })
+      if (url) return url
+    } catch {
+      // try next key
+    }
+  }
+
+  // Fallback direct sign
   const command = new GetObjectCommand({
     Bucket: r2.bucket,
-    Key: key,
+    Key: filename,
   })
   return getSignedUrl(r2.client, command, { expiresIn })
 }
@@ -91,12 +120,24 @@ export function hasLocalClip(filename: string): boolean {
   return fs.existsSync(p) && fs.statSync(p).size > 0
 }
 
-export async function persistClip(filename: string, buffer: Buffer): Promise<string> {
+export async function persistClip(
+  filename: string,
+  buffer: Buffer,
+  options?: { userId?: string; projectId?: string }
+): Promise<string> {
   const localPath = getLocalClipPath(filename)
   fs.writeFileSync(localPath, buffer)
   if (isR2Configured()) {
+    const userId = options?.userId || 'admin'
+    const projectId = options?.projectId || 'default-project'
     try {
-      await putFilm(filename, localPath)
+      // Save under canonical structured paths for per-user / per-project organisation
+      await Promise.allSettled([
+        putFilm(filename, localPath),
+        putFilm(`films/${filename}`, localPath),
+        putFilm(`projects/${projectId}/${filename}`, localPath),
+        putFilm(`users/${userId}/projects/${projectId}/${filename}`, localPath),
+      ])
     } catch {
       // ignore R2 upload failure if local save succeeded
     }
