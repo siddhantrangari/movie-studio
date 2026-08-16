@@ -849,14 +849,21 @@ export default function VideoGenClient() {
                   `}</style>
 
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                    <h3 style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, margin: 0 }}>
-                      Generating
-                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {jobs.some(j => j.state === 'queued' || j.state === 'running') && (
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--gold)', boxShadow: '0 0 10px var(--gold)', animation: 'spin 1.5s linear infinite' }} />
+                      )}
+                      <h3 style={{ fontSize: '11px', color: jobs.some(j => j.state === 'queued' || j.state === 'running') ? 'var(--gold)' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, margin: 0 }}>
+                        {jobs.some(j => j.state === 'queued' || j.state === 'running')
+                          ? `⚡ Live GPU Generation (${jobs.filter(j => j.state === 'queued' || j.state === 'running').length} Active)`
+                          : 'Recent Generations'}
+                      </h3>
+                    </div>
                     <button
                       onClick={() => setActiveTab('generations')}
                       style={{ fontSize: '10px', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
                     >
-                      View all →
+                      View all ({jobs.length}) →
                     </button>
                   </div>
 
@@ -1720,6 +1727,47 @@ export default function VideoGenClient() {
           setCharDesc(data.description)
           setCharNotes(data.turnaroundPrompt)
           setActiveTab('characters')
+        }}
+        onShotsQueued={(shots) => {
+          const newJobs: Job[] = shots.map((s, idx) => ({
+            id: s.id,
+            promptId: s.promptId || '',
+            label: s.title || `Shot #${idx + 1}`,
+            prompt: s.prompt,
+            seconds: s.seconds || 6,
+            state: (s.state === 'running' || s.state === 'done' || s.state === 'error') ? (s.state as Job['state']) : 'queued',
+            startedAt: Date.now(),
+            createdAt: Date.now(),
+            projectId: activeProjectId,
+          }))
+          setJobs(prev => [
+            ...newJobs,
+            ...prev.filter(p => !newJobs.some(n => n.id === p.id || (n.promptId && n.promptId === p.promptId)))
+          ])
+          // Switch to home tab if not on generations
+          if (activeTab !== 'home' && activeTab !== 'generations') {
+            setActiveTab('home')
+          }
+        }}
+        onShotsUpdated={(shots) => {
+          setJobs(prev => prev.map(job => {
+            const match = shots.find(s => s.id === job.id || (s.promptId && s.promptId === job.promptId) || (s.title && s.title === job.label))
+            if (match) {
+              return {
+                ...job,
+                state: match.state as Job['state'],
+                filename: match.filename ?? job.filename,
+                subfolder: match.subfolder ?? job.subfolder,
+                error: match.error ?? job.error,
+              }
+            }
+            return job
+          }))
+        }}
+        onFilmCompleted={async () => {
+          await loadFilms()
+          await loadGenerations()
+          toast.success('🎬 Master Movie fully assembled and ready!')
         }}
       />
     </div>

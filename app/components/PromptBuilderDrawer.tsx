@@ -34,6 +34,9 @@ type Props = {
   onApplyScene?: (data: { prompt: string; cameraMotion?: string; lighting?: string; colorPalette?: string }) => void
   onApplyCharacter?: (data: { name: string; description: string; turnaroundPrompt: string }) => void
   onApplyMovie?: (data: { title: string; shots: Array<{ order: number; title: string; seconds: number; prompt: string }> }) => void
+  onShotsQueued?: (shots: Array<{ id: string; promptId?: string; title: string; prompt: string; seconds: number; state: string }>) => void
+  onShotsUpdated?: (shots: Array<{ id: string; promptId?: string; title?: string; prompt?: string; seconds?: number; state: string; filename?: string; subfolder?: string; error?: string }>) => void
+  onFilmCompleted?: (file: string) => void
 }
 
 export default function PromptBuilderDrawer({
@@ -44,6 +47,9 @@ export default function PromptBuilderDrawer({
   onApplyScene,
   onApplyCharacter,
   onApplyMovie,
+  onShotsQueued,
+  onShotsUpdated,
+  onFilmCompleted,
 }: Props) {
   const { toast } = useToast()
   const [type, setType] = useState<'scene' | 'character' | 'movie'>(initialType)
@@ -282,6 +288,9 @@ export default function PromptBuilderDrawer({
         throw new Error(queueData.error || 'Failed to dispatch shots to GPU')
       }
 
+      const queuedScenes = queueData.storyboard?.scenes || scenes
+      onShotsQueued?.(queuedScenes)
+
       // Step 3: Poll GPU progress until all shots are rendered
       setMovieGenState('rendering')
       setMovieGenProgress((p) => ({ ...p, stage: `Rendering shots on GPU (0/${result.shots!.length} completed)...` }))
@@ -304,6 +313,9 @@ export default function PromptBuilderDrawer({
           currentShot: doneCount,
           shotStatus: statuses,
         }))
+
+        // Live update the generation cards on the left
+        onShotsUpdated?.(currentScenes)
 
         if (errorCount > 0 && doneCount + errorCount === currentScenes.length) {
           const firstErr = currentScenes.find((s: { error?: string }) => s.error)?.error || 'One or more shots failed on GPU'
@@ -370,6 +382,7 @@ export default function PromptBuilderDrawer({
           stage: '🎉 Master Movie Assembly Complete!',
           filmFile: file,
         }))
+        onFilmCompleted?.(file)
       })
     } catch (e) {
       setMovieGenState('error')
