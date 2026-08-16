@@ -7,6 +7,7 @@ import PromptBuilderDrawer from './components/PromptBuilderDrawer'
 import UsageDashboard from './components/UsageDashboard'
 import EnginesHub from './components/EnginesHub'
 import SingingStudio from './components/SingingStudio'
+import PodLogsModal from './components/PodLogsModal'
 import { useToast } from './components/Toast'
 
 type PodData = {
@@ -220,6 +221,8 @@ export default function VideoGenClient() {
   const [leftNavCollapsed, setLeftNavCollapsed] = useState(false)
   const [showCharModal, setShowCharModal] = useState(false)
   const [showPodDrawer, setShowPodDrawer] = useState(false)
+  const [showPodLogsModal, setShowPodLogsModal] = useState(false)
+  const [inspectorPodId, setInspectorPodId] = useState<string | undefined>(undefined)
   const [showPromptBuilder, setShowPromptBuilder] = useState(false)
   const [show4kModal, setShow4kModal] = useState(false)
   const [selectedTier, setSelectedTier] = useState<'standard' | 'ultra_4k'>('standard')
@@ -792,22 +795,51 @@ export default function VideoGenClient() {
               }
 
               return (
-                <button onClick={() => setShowPodDrawer(!showPodDrawer)} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '11px', fontWeight: 800,
-                  padding: '0.42rem 0.85rem', borderRadius: '0.5rem',
-                  border: `1px solid ${anyRunning ? 'rgba(74,222,128,0.4)' : 'rgba(232,185,74,0.35)'}`,
-                  background: anyRunning ? 'rgba(74,222,128,0.1)' : '#070c14',
-                  color: anyRunning ? '#4ade80' : 'var(--gold)', cursor: 'pointer',
-                  boxShadow: anyRunning ? '0 0 12px rgba(74,222,128,0.15)' : 'none',
-                  transition: 'all 0.2s ease',
-                }}
-                title="Click to manage GPU Compute Nodes"
-                >
-                  <span style={{ fontSize: '9px', color: anyRunning ? '#4ade80' : '#64748b' }}>
-                    {anyRunning ? '●' : '⚡'}
-                  </span>
-                  <span>{label}</span>
-                </button>
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <button onClick={() => setShowPodDrawer(!showPodDrawer)} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '11px', fontWeight: 800,
+                    padding: '0.42rem 0.85rem', borderRadius: '0.5rem',
+                    border: `1px solid ${anyRunning ? 'rgba(74,222,128,0.4)' : 'rgba(232,185,74,0.35)'}`,
+                    background: anyRunning ? 'rgba(74,222,128,0.1)' : '#070c14',
+                    color: anyRunning ? '#4ade80' : 'var(--gold)', cursor: 'pointer',
+                    boxShadow: anyRunning ? '0 0 12px rgba(74,222,128,0.15)' : 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                  title="Click to manage GPU Compute Nodes"
+                  >
+                    <span style={{ fontSize: '9px', color: anyRunning ? '#4ade80' : '#64748b' }}>
+                      {anyRunning ? '●' : '⚡'}
+                    </span>
+                    <span>{label}</span>
+                  </button>
+
+                  {anyRunning && (
+                    <button
+                      onClick={() => {
+                        setInspectorPodId(pods.minimax?.id || pods.ltx?.id)
+                        setShowPodLogsModal(true)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '0.42rem 0.75rem',
+                        borderRadius: '0.5rem',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        background: 'rgba(59, 130, 246, 0.12)',
+                        color: '#93c5fd',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      title="Open Real-time GPU Pod Console & Logs"
+                    >
+                      <span>📟</span>
+                      <span>Live Logs</span>
+                    </button>
+                  )}
+                </div>
               )
             })()}
 
@@ -2300,6 +2332,17 @@ export default function VideoGenClient() {
           </div>
         </div>
       )}
+
+      {/* Live Pod Inspector & Terminal Modal */}
+      <PodLogsModal
+        isOpen={showPodLogsModal}
+        podId={inspectorPodId}
+        onClose={() => setShowPodLogsModal(false)}
+        onTerminate={async () => {
+          await podAction(fleetModalTab, 'terminate')
+          setShowPodLogsModal(false)
+        }}
+      />
 
       {/* Modal: 4K Ultra HD GPU Pod Warning & Switcher */}
       {show4kModal && (
