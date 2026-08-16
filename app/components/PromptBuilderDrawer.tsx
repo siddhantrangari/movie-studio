@@ -248,6 +248,7 @@ export default function PromptBuilderDrawer({
         id: `sc_${Date.now()}_${i}`,
         order: s.order || i + 1,
         title: s.title,
+        prompt: s.prompt,
         description: s.prompt,
         seconds: s.seconds || 6,
         camera: s.camera || '',
@@ -289,9 +290,10 @@ export default function PromptBuilderDrawer({
         const d = await r.json()
         const currentScenes = d.storyboard?.scenes || []
         const doneCount = currentScenes.filter((s: { state: string }) => s.state === 'done').length
+        const errorCount = currentScenes.filter((s: { state: string }) => s.state === 'error').length
         const statuses: Record<string, string> = {}
-        currentScenes.forEach((s: { id: string; state: string; error?: string }) => {
-          statuses[s.id] = s.state === 'done' ? '✓ Done' : s.state === 'error' ? '⚠️ Failed' : '⏳ Rendering'
+        currentScenes.forEach((s: { id: string; state: string; error?: string; title?: string }) => {
+          statuses[s.id] = s.state === 'done' ? '✓ Rendered' : s.state === 'error' ? `⚠️ Failed: ${s.error || 'GPU error'}` : s.state === 'running' ? '⏳ Rendering Frame…' : '⏱️ Queued'
         })
 
         setMovieGenProgress((p) => ({
@@ -300,6 +302,11 @@ export default function PromptBuilderDrawer({
           currentShot: doneCount,
           shotStatus: statuses,
         }))
+
+        if (errorCount > 0 && doneCount + errorCount === currentScenes.length) {
+          const firstErr = currentScenes.find((s: { error?: string }) => s.error)?.error || 'One or more shots failed on GPU'
+          throw new Error(firstErr)
+        }
 
         return doneCount === currentScenes.length && currentScenes.length > 0
       }
@@ -317,7 +324,7 @@ export default function PromptBuilderDrawer({
             clearInterval(interval)
             reject(err)
           }
-        }, 3500)
+        }, 3000)
         moviePollRef.current = interval
       })
 
@@ -797,95 +804,6 @@ export default function PromptBuilderDrawer({
             )}
           </button>
 
-          {/* 1-Click Full Movie Live Generation Banner */}
-          {movieGenState !== 'idle' && (
-            <div
-              style={{
-                padding: '1rem',
-                background: 'linear-gradient(135deg, rgba(18,31,53,0.95), rgba(7,12,20,0.98))',
-                border: movieGenState === 'done' ? '1px solid #4ade80' : movieGenState === 'error' ? '1px solid #f87171' : '1px solid var(--gold, #E8B94A)',
-                borderRadius: '0.6rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.75rem',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: movieGenState === 'done' ? '#4ade80' : movieGenState === 'error' ? '#f87171' : 'var(--gold, #E8B94A)' }}>
-                  {movieGenState === 'done' ? '🎉 Full Movie Rendered & Assembled!' : movieGenState === 'error' ? '⚠️ Movie Generation Error' : '🎬 1-Click Full Movie Engine Active'}
-                </span>
-                <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-                  {movieGenProgress.currentShot} / {movieGenProgress.totalShots} Shots
-                </span>
-              </div>
-
-              <p style={{ fontSize: '11px', color: '#F2F5FA', margin: 0 }}>
-                {movieGenProgress.error ? movieGenProgress.error : movieGenProgress.stage}
-              </p>
-
-              {/* Shot Statuses List */}
-              {Object.keys(movieGenProgress.shotStatus).length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '120px', overflowY: 'auto' }}>
-                  {Object.entries(movieGenProgress.shotStatus).map(([id, st]) => (
-                    <div key={id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', background: '#070c14', padding: '0.25rem 0.5rem', borderRadius: '0.3rem' }}>
-                      <span style={{ color: '#94a3b8' }}>Scene {id.slice(-4)}:</span>
-                      <span style={{ color: st.includes('Done') ? '#4ade80' : 'var(--gold, #E8B94A)', fontWeight: 700 }}>{st}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Master Movie Video Player when Done */}
-              {movieGenState === 'done' && movieGenProgress.filmFile && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
-                  <video
-                    src={`/api/videogen/assemble?file=${encodeURIComponent(movieGenProgress.filmFile)}`}
-                    controls
-                    autoPlay
-                    playsInline
-                    style={{ width: '100%', borderRadius: '0.5rem', background: '#000', maxHeight: '200px' }}
-                  />
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <a
-                      href={`/api/videogen/assemble?file=${encodeURIComponent(movieGenProgress.filmFile)}&download=1`}
-                      download
-                      style={{
-                        flex: 1,
-                        textAlign: 'center',
-                        textDecoration: 'none',
-                        background: 'var(--gold, #E8B94A)',
-                        color: '#05080e',
-                        padding: '0.5rem',
-                        borderRadius: '0.4rem',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                      }}
-                    >
-                      ⬇️ Download Master Movie (.mp4)
-                    </a>
-                    <a
-                      href="/movie"
-                      style={{
-                        textAlign: 'center',
-                        textDecoration: 'none',
-                        background: '#0e182e',
-                        border: '1px solid #1a2840',
-                        color: '#cbd5e1',
-                        padding: '0.5rem 0.75rem',
-                        borderRadius: '0.4rem',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      🎞️ Open Studio Timeline
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Result View */}
           {result && (
             <div
@@ -1084,6 +1002,116 @@ export default function PromptBuilderDrawer({
                         <span>1-Click Generate Full Movie (All Shots + Auto-Stitch)</span>
                       </button>
                     </div>
+
+                    {/* 1-Click Full Movie Live Generation Progress Card */}
+                    {movieGenState !== 'idle' && (
+                      <div
+                        style={{
+                          padding: '1rem',
+                          background: 'linear-gradient(135deg, rgba(18,31,53,0.98), rgba(7,12,20,0.98))',
+                          border: movieGenState === 'done' ? '1px solid #4ade80' : movieGenState === 'error' ? '1px solid #f87171' : '1px solid var(--gold, #E8B94A)',
+                          borderRadius: '0.6rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.75rem',
+                          boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+                          marginBottom: '0.75rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: movieGenState === 'done' ? '#4ade80' : movieGenState === 'error' ? '#f87171' : 'var(--gold, #E8B94A)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            {movieGenState === 'done' ? '🎉 Full Movie Rendered & Assembled!' : movieGenState === 'error' ? '⚠️ Movie Generation Error' : (
+                              <>
+                                <span style={{ display: 'inline-block', animation: 'spin 1.5s linear infinite' }}>⚡</span>
+                                <span>1-Click Full Movie Engine Active</span>
+                              </>
+                            )}
+                          </span>
+                          <span style={{ fontSize: '10px', color: '#94a3b8', background: '#070c14', padding: '0.2rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
+                            {movieGenProgress.currentShot} / {movieGenProgress.totalShots} Shots
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '11px', color: movieGenProgress.error ? '#f87171' : '#F2F5FA', margin: 0, fontWeight: 600 }}>
+                          {movieGenProgress.error ? `Error: ${movieGenProgress.error}` : movieGenProgress.stage}
+                        </p>
+
+                        {/* Shimmer progress bar */}
+                        {movieGenState !== 'done' && movieGenState !== 'error' && (
+                          <div style={{ width: '100%', height: '5px', background: '#070c14', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                height: '100%',
+                                width: `${Math.max(10, (movieGenProgress.currentShot / Math.max(1, movieGenProgress.totalShots)) * 100)}%`,
+                                background: 'linear-gradient(90deg, #E8B94A, #4ade80)',
+                                borderRadius: '3px',
+                                transition: 'width 0.4s ease',
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Shot Statuses List */}
+                        {Object.keys(movieGenProgress.shotStatus).length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '140px', overflowY: 'auto' }}>
+                            {Object.entries(movieGenProgress.shotStatus).map(([id, st]) => (
+                              <div key={id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', background: '#070c14', padding: '0.3rem 0.5rem', borderRadius: '0.3rem', border: '1px solid #1a2840' }}>
+                                <span style={{ color: '#94a3b8' }}>Shot {id.slice(-3)}:</span>
+                                <span style={{ color: st.includes('Rendered') ? '#4ade80' : st.includes('Failed') ? '#f87171' : 'var(--gold, #E8B94A)', fontWeight: 700 }}>{st}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Master Movie Video Player when Done */}
+                        {movieGenState === 'done' && movieGenProgress.filmFile && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
+                            <video
+                              src={`/api/videogen/assemble?file=${encodeURIComponent(movieGenProgress.filmFile)}`}
+                              controls
+                              autoPlay
+                              playsInline
+                              style={{ width: '100%', borderRadius: '0.5rem', background: '#000', maxHeight: '220px' }}
+                            />
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <a
+                                href={`/api/videogen/assemble?file=${encodeURIComponent(movieGenProgress.filmFile)}&download=1`}
+                                download
+                                style={{
+                                  flex: 1,
+                                  textAlign: 'center',
+                                  textDecoration: 'none',
+                                  background: 'var(--gold, #E8B94A)',
+                                  color: '#05080e',
+                                  padding: '0.5rem',
+                                  borderRadius: '0.4rem',
+                                  fontSize: '11px',
+                                  fontWeight: 800,
+                                }}
+                              >
+                                ⬇️ Download Master Movie (.mp4)
+                              </a>
+                              <a
+                                href="/movie"
+                                style={{
+                                  textAlign: 'center',
+                                  textDecoration: 'none',
+                                  background: '#0e182e',
+                                  border: '1px solid #1a2840',
+                                  color: '#cbd5e1',
+                                  padding: '0.5rem 0.75rem',
+                                  borderRadius: '0.4rem',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                🎞️ Open Studio Timeline
+                              </a>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Shot List with Edit & Regenerate controls */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.4rem' }}>

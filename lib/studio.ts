@@ -247,14 +247,15 @@ export function deleteStoryboard(id: string) {
  * Builds the final prompt for a scene, folding in character visual description,
  * character turnaround style sheet guidelines, and scene prompt.
  */
-export function composeScenePrompt(scene: Scene, characters: Character[]): string {
+export function composeScenePrompt(scene: Partial<Scene> & { description?: string }, characters: Character[]): string {
+  const rawPrompt = (scene.prompt || scene.description || '').trim()
   const c = scene.characterId ? characters.find((x) => x.id === scene.characterId) : undefined
-  if (!c) return scene.prompt
+  if (!c) return rawPrompt
   
   const parts: string[] = []
   if (c.description?.trim()) parts.push(c.description.trim())
   if (c.styleSheetNotes?.trim()) parts.push(`Character Style: ${c.styleSheetNotes.trim()}`)
-  parts.push(scene.prompt.trim())
+  if (rawPrompt) parts.push(rawPrompt)
 
   return parts.join('. ').replace(/\.\s*\./g, '.')
 }
