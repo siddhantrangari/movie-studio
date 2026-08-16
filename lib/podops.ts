@@ -363,13 +363,37 @@ export async function findPod(model: PodModel = 'ltx25'): Promise<Record<string,
 }
 
 /**
- * The persistent model volume, if one exists.
+ * The persistent model volume.
+ * Supports a single high-capacity shared volume (e.g. 'studio-models' or 'ai-models')
+ * for all engines (LTX, MiniMax, Wan, etc.), or model-specific volumes.
  */
-export async function findVolume(model: PodModel = 'ltx25'): Promise<{ id: string; dataCenterId: string } | null> {
+export async function findVolume(model?: PodModel): Promise<{ id: string; name: string; dataCenterId: string; size: number } | null> {
   const { data } = await api('/networkvolumes')
-  if (!Array.isArray(data)) return null
-  const v = data.find((vol: { name?: string }) => vol.name === VOLUME_NAMES[model])
-  return v?.id ? { id: String(v.id), dataCenterId: String(v.dataCenterId ?? '') } : null
+  if (!Array.isArray(data) || data.length === 0) return null
+
+  // 1. Check for dedicated shared volume across all studio engines
+  const shared = data.find((vol: { name?: string }) =>
+    vol.name && ['studio-models', 'ai-models', 'comfyui-models', 'movie-studio-models', 'shared-models'].includes(vol.name)
+  )
+  if (shared?.id) {
+    return { id: String(shared.id), name: String(shared.name), dataCenterId: String(shared.dataCenterId ?? ''), size: Number(shared.size ?? 0) }
+  }
+
+  // 2. Check for model-specific volume (e.g. ltx25-models or minimax-h3-models)
+  if (model) {
+    const specific = data.find((vol: { name?: string }) => vol.name === VOLUME_NAMES[model])
+    if (specific?.id) {
+      return { id: String(specific.id), name: String(specific.name), dataCenterId: String(specific.dataCenterId ?? ''), size: Number(specific.size ?? 0) }
+    }
+  }
+
+  // 3. Fallback: use any existing volume on the account so weights persist
+  const first = data[0]
+  if (first?.id) {
+    return { id: String(first.id), name: String(first.name ?? 'network-volume'), dataCenterId: String(first.dataCenterId ?? ''), size: Number(first.size ?? 0) }
+  }
+
+  return null
 }
 
 /**
@@ -428,12 +452,12 @@ export async function* bringUp(
   if (volume) {
     yield {
       level: 'ok',
-      text: `Using the ${VOLUME_NAMES[model]} volume in ${volume.dataCenterId} — models will persist.`,
+      text: `Using persistent network volume "${volume.name}" (${volume.size ? volume.size + 'GB ' : ''}in ${volume.dataCenterId}) — models persist permanently across pod termination.`,
     }
   } else {
     yield {
       level: 'warn',
-      text: `No ${VOLUME_NAMES[model]} volume found, weights will be downloaded to container disk.`,
+      text: `No persistent network volume found, weights will be stored on 200GB pod volume.`,
     }
   }
 
