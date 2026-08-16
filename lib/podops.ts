@@ -318,7 +318,7 @@ export async function comfyReady(podId: string): Promise<boolean> {
  * The provisioning log as the pod has it so far, or null if the log server
  * isn't answering yet (still booting, or the entrypoint override didn't take).
  */
-async function fetchProvisionLog(podId: string): Promise<string | null> {
+export async function fetchProvisionLog(podId: string): Promise<string | null> {
   try {
     const res = await fetch(`https://${podId}-${LOG_PORT}.proxy.runpod.net/provision.log`, {
       headers: { 'User-Agent': BROWSER_UA, Accept: '*/*' },

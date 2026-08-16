@@ -59,13 +59,54 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
   const [autoShutdownMinutes, setAutoShutdownMinutes] = useState<number>(5)
   const [deployingModel, setDeployingModel] = useState<'minimax' | 'ltx25' | null>(null)
   const [inspectingPodId, setInspectingPodId] = useState<string | null>(null)
+  const [seedingVolume, setSeedingVolume] = useState(false)
+  const [seedLogs, setSeedLogs] = useState<{ level: string; text: string }[]>([])
+  const [showSeedModal, setShowSeedModal] = useState(false)
   const logContainerRef = React.useRef<HTMLDivElement>(null)
+  const seedLogRef = React.useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
     }
   }, [actionLogs])
+
+  useEffect(() => {
+    if (seedLogRef.current) {
+      seedLogRef.current.scrollTop = seedLogRef.current.scrollHeight
+    }
+  }, [seedLogs])
+
+  const handleSeedVolume = async () => {
+    setSeedLogs([])
+    setShowSeedModal(true)
+    setSeedingVolume(true)
+    try {
+      const res = await fetch('/api/videogen/pod/seed', { method: 'POST' })
+      if (!res.body) throw new Error('No response stream')
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const parsed = JSON.parse(line)
+            setSeedLogs((prev) => [...prev, parsed])
+          } catch { setSeedLogs((prev) => [...prev, { level: 'info', text: line }]) }
+        }
+      }
+    } catch (err: any) {
+      setSeedLogs((prev) => [...prev, { level: 'error', text: err.message }])
+    } finally {
+      setSeedingVolume(false)
+    }
+  }
 
   const handleUpdateAutoShutdown = async (mins: number) => {
     try {
@@ -676,6 +717,27 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
             >
               {showCreateVol ? '✕ Cancel' : '➕ Create Extra Volume'}
             </button>
+            <button
+              onClick={handleSeedVolume}
+              disabled={seedingVolume}
+              title="Download ALL models (LTX 2.5 + MiniMax H3) to persistent volume in one shot"
+              style={{
+                background: seedingVolume ? 'rgba(234,179,8,0.1)' : 'rgba(234,179,8,0.15)',
+                color: '#fbbf24',
+                border: `1px solid ${seedingVolume ? 'rgba(234,179,8,0.5)' : 'rgba(234,179,8,0.35)'}`,
+                borderRadius: '0.35rem',
+                padding: '0.4rem 0.75rem',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: seedingVolume ? 'wait' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.3rem',
+                animation: seedingVolume ? 'pulse 1.5s ease-in-out infinite' : 'none',
+              }}
+            >
+              {seedingVolume ? '⏳ Seeding...' : '📥 Seed All Models'}
+            </button>
           </div>
         </div>
 
@@ -1193,6 +1255,97 @@ export default function EnginesHub({ onNavigateToGen }: { onNavigateToGen?: () =
           }}
         />
       </div>
+
+      {/* Seed Volume Modal — live download progress */}
+      {showSeedModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, padding: '1rem',
+        }}>
+          <div style={{
+            background: '#070c14', border: '1px solid rgba(251,191,36,0.3)',
+            borderRadius: '0.75rem', padding: '1.5rem', width: '100%', maxWidth: '760px',
+            maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: '1rem',
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#fbbf24', margin: 0 }}>
+                  📥 Seeding Persistent Volume — All Models
+                </h3>
+                <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.2rem 0 0' }}>
+                  LTX 2.5 (~37 GB) + MiniMax Hailuo 3 (~66.5 GB) → one-time download, persists forever
+                </p>
+              </div>
+              {!seedingVolume && (
+                <button onClick={() => setShowSeedModal(false)} style={{
+                  background: 'none', border: '1px solid #1a2840', color: '#94a3b8',
+                  borderRadius: '0.35rem', padding: '0.3rem 0.6rem', cursor: 'pointer', fontSize: '12px',
+                }}>✕ Close</button>
+              )}
+            </div>
+
+            {/* Progress hint */}
+            {seedingVolume && (
+              <div style={{
+                background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)',
+                borderRadius: '0.4rem', padding: '0.6rem 0.9rem', fontSize: '11px', color: '#fbbf24',
+              }}>
+                ⚡ A seed pod is running on RunPod. Downloads ~103 GB total at ~100-200 MB/s — expect 10-20 minutes.
+                The pod will auto-terminate when complete. Do not close this window.
+              </div>
+            )}
+
+            {/* Log output */}
+            <div
+              ref={seedLogRef}
+              style={{
+                flex: 1, overflowY: 'auto', fontFamily: 'monospace', fontSize: '11.5px',
+                background: '#02060e', borderRadius: '0.5rem', padding: '0.75rem',
+                border: '1px solid #0f1a2e', minHeight: '320px', maxHeight: '480px',
+              }}
+            >
+              {seedLogs.length === 0 && (
+                <span style={{ color: '#475569' }}>Connecting to seed pod...</span>
+              )}
+              {seedLogs.map((l, i) => (
+                <div key={i} style={{
+                  color: l.level === 'error' ? '#f87171'
+                    : l.level === 'ok' || l.level === 'done' ? '#4ade80'
+                    : l.level === 'warn' ? '#fb923c'
+                    : l.level === 'log' ? '#cbd5e1'
+                    : '#60a5fa',
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}>
+                  {l.level === 'done' ? '🎉 ' : ''}{l.text}
+                </div>
+              ))}
+              {seedingVolume && (
+                <span style={{ color: '#fbbf24', animation: 'pulse 1s ease-in-out infinite' }}>█</span>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '10.5px', color: '#475569' }}>
+                {seedLogs.filter(l => l.level === 'done').length > 0
+                  ? '✅ Complete — pod terminated. All future pods will skip downloads.'
+                  : seedingVolume ? 'Downloading...' : 'Finished'}
+              </span>
+              {!seedingVolume && (
+                <button onClick={() => { setShowSeedModal(false); setSeedLogs([]) }} style={{
+                  background: 'rgba(37,99,235,0.2)', border: '1px solid rgba(37,99,235,0.4)',
+                  color: '#60a5fa', borderRadius: '0.35rem', padding: '0.4rem 0.9rem',
+                  fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                }}>Close</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
