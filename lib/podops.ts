@@ -531,24 +531,46 @@ export async function* bringUp(
 
   let volume = await findVolume(model)
   // MiniMax weights total ~65GB. If the network volume is < 100GB (e.g. the 60GB LTX volume),
-  // don't attach it to avoid running out of disk space — use the 200GB pod volume instead.
+  // don't attach it to avoid running out of disk space — try auto-creating a proper 200GB volume.
   if (isMiniMax && volume && volume.size > 0 && volume.size < 100) {
     yield {
       level: 'info',
-      text: `Network volume "${volume.name}" is ${volume.size}GB (MiniMax requires ≥100GB). Allocating 200GB dedicated pod volume instead.`,
+      text: `Network volume "${volume.name}" is ${volume.size}GB (MiniMax requires ≥100GB). Attempting to create a dedicated 200GB volume...`,
     }
     volume = null
+  }
+
+  // For MiniMax: auto-create a persistent 200GB network volume so weights survive pod termination.
+  // This is the KEY fix — without persistence, the pod re-downloads 65GB every boot (~15min),
+  // causing the auto-shutdown watchdog to kill it before generation ever starts.
+  if (isMiniMax && !volume) {
+    yield { level: 'info', text: '📦 Creating 200GB persistent network volume for MiniMax H3 weights (one-time, ~$0.07/GB/month)...' }
+    try {
+      const newVol = await createVolume('minimax-h3-models', 200, 'EU-RO-1')
+      if (newVol.ok && newVol.id) {
+        // Re-fetch to get full metadata
+        await new Promise((r) => setTimeout(r, 2000))
+        volume = await findVolume(model)
+        if (volume) {
+          yield { level: 'ok', text: `✓ Created persistent volume "${volume.name}" (200GB in EU-RO-1). MiniMax weights will now survive pod termination permanently.` }
+        }
+      } else {
+        yield { level: 'warn', text: `Could not create network volume: ${newVol.error}. Falling back to 200GB pod volume (weights re-download each boot).` }
+      }
+    } catch (e: any) {
+      yield { level: 'warn', text: `Volume auto-create failed: ${e.message}. Continuing without persistence.` }
+    }
   }
 
   if (volume) {
     yield {
       level: 'ok',
-      text: `Using persistent network volume "${volume.name}" (${volume.size ? volume.size + 'GB ' : ''}in ${volume.dataCenterId}) — models persist permanently across pod termination.`,
+      text: `✓ Persistent network volume "${volume.name}" (${volume.size ? volume.size + 'GB ' : ''}in ${volume.dataCenterId}) attached — weights will NOT be re-downloaded on future boots.`,
     }
   } else {
     yield {
       level: 'warn',
-      text: `No persistent network volume found, weights will be stored on 200GB pod volume.`,
+      text: `⚠ No persistent volume — MiniMax weights (65GB) will download fresh this boot (~15min). Generation will start automatically once ready.`,
     }
   }
 
