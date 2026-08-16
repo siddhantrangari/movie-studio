@@ -111,8 +111,6 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     },
     // ── Video Frame Decode ─────────────────────────────────────────────────────
     '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
-    // ── Native Stereo Audio Decode ─────────────────────────────────────────────
-    '8b': { class_type: 'VAEDecodeAudio', inputs: { samples: ['7', 0], vae: ['3', 0] } },
     // ── High-Fidelity GPU Super-Resolution (if target > base) ──────────────────
     '8a': {
       class_type: 'ImageScale',
@@ -124,11 +122,11 @@ export function buildMiniMaxWorkflow(p: GenParams) {
         crop: 'disabled',
       },
     },
-    // ── Video + Synchronized Audio Export ──────────────────────────────────────
-    '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], audio: ['8b', 0], fps } },
+    // ── Video Export ───────────────────────────────────────────────────────────
+    '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], fps } },
     '10': {
       class_type: 'SaveVideo',
-      inputs: { video: ['9', 0], audio: ['8b', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
+      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
     },
   }
 
