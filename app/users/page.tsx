@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useToast } from '../components/Toast'
 
 type UserItem = {
   id: string
@@ -14,6 +15,7 @@ type UserItem = {
 }
 
 export default function UserManagementPage() {
+  const { confirm: showConfirmModal, toast } = useToast()
   const [users, setUsers] = useState<UserItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -65,23 +67,30 @@ export default function UserManagementPage() {
     }
   }
 
-  async function handleDeleteUser(id: string, email: string) {
-    if (!confirm(`Are you sure you want to delete user ${email}?`)) return
-    try {
-      setActionMsg('')
-      const res = await fetch(`/api/admin/users?id=${id}`, {
-        method: 'DELETE',
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setActionMsg(`User deleted successfully`)
-        fetchUsers()
-      } else {
-        setError(data.error || 'Failed to delete user')
-      }
-    } catch {
-      setError('Error deleting user')
-    }
+  function handleDeleteUser(id: string, email: string) {
+    showConfirmModal({
+      title: 'Delete User Account',
+      message: `Are you sure you want to permanently delete user account ${email}?`,
+      confirmText: '🗑️ Delete User',
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          setActionMsg('')
+          const res = await fetch(`/api/admin/users?id=${id}`, {
+            method: 'DELETE',
+          })
+          const data = await res.json()
+          if (res.ok) {
+            toast.success(`User ${email} deleted successfully`)
+            fetchUsers()
+          } else {
+            toast.error(data.error || 'Failed to delete user')
+          }
+        } catch {
+          toast.error('Error deleting user')
+        }
+      },
+    })
   }
 
   return (

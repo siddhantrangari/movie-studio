@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useToast } from './Toast'
 
 export type PromptBuilderResult = {
   title?: string
@@ -44,6 +45,7 @@ export default function PromptBuilderDrawer({
   onApplyCharacter,
   onApplyMovie,
 }: Props) {
+  const { toast } = useToast()
   const [type, setType] = useState<'scene' | 'character' | 'movie'>(initialType)
   const [input, setInput] = useState('')
   const [genre, setGenre] = useState('⚡ Auto / Director\'s Choice (AI Decides)')
@@ -223,7 +225,7 @@ export default function PromptBuilderDrawer({
         setResult({ ...result, shots: updatedShots })
       }
     } catch (e) {
-      alert(`Regeneration error: ${(e as Error).message}`)
+      toast.error(`Regeneration error: ${(e as Error).message}`)
     } finally {
       setRegeneratingShotIdx(null)
     }
@@ -378,6 +380,7 @@ export default function PromptBuilderDrawer({
   const copyText = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopied(true)
+    toast.success('Copied to clipboard!')
     setTimeout(() => setCopied(false), 2000)
   }
 

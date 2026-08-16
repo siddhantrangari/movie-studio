@@ -1,6 +1,5 @@
-'use client'
-
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useToast } from '../components/Toast'
 
 type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
 type Pod = {
@@ -19,6 +18,7 @@ const LEVEL_COLOR: Record<string, string> = {
 }
 
 export default function PodPanel({ onPodChange }: { onPodChange?: (running: boolean) => void }) {
+  const { confirm: showConfirmModal, toast } = useToast()
   const [pod, setPod] = useState<Pod>(null)
   const [account, setAccount] = useState<{ balance: number; spendPerHr: number } | null>(null)
   const [logs, setLogs] = useState<LogLine[]>([])
@@ -52,8 +52,7 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [logs])
 
-  const run = async (action: 'up' | 'down') => {
-    if (action === 'down' && !confirm('Terminate the pod? Generated clips still on it will be lost.')) return
+  const executeRun = async (action: 'up' | 'down') => {
     setBusy(true)
     setOpen(true)
     setLogs([{ level: 'info', text: action === 'up' ? `Starting ${tier === 'ultra_4k' ? 'Ultra 4K (48GB+)' : 'Standard (24GB)'} GPU…` : 'Shutting down…' }])
@@ -68,27 +67,47 @@ export default function PodPanel({ onPodChange }: { onPodChange?: (running: bool
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buf = ''
+
       for (;;) {
-        const { done, value } = await reader.read()
+        const { value, done } = await reader.read()
         if (done) break
         buf += decoder.decode(value, { stream: true })
-        const parts = buf.split('\n')
-        buf = parts.pop() ?? ''
-        for (const p of parts) {
-          if (!p.trim()) continue
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const raw of lines) {
+          if (!raw.trim()) continue
           try {
-            const line = JSON.parse(p) as LogLine
-            if (line.level === 'done') { refresh(); continue }
-            setLogs(prev => [...prev, line])
-          } catch { /* partial frame */ }
+            const line: LogLine = JSON.parse(raw)
+            if (line.level === 'done') {
+              setBusy(false)
+              refresh()
+              toast.success(action === 'up' ? 'GPU Pod ready!' : 'Pod terminated.')
+            } else {
+              setLogs((prev) => [...prev, line])
+            }
+          } catch {
+            // raw string fallback
+          }
         }
       }
-      await refresh()
     } catch (e) {
-      setLogs(prev => [...prev, { level: 'error', text: (e as Error).message }])
-    } finally {
+      setLogs((prev) => [...prev, { level: 'error', text: (e as Error).message }])
       setBusy(false)
     }
+  }
+
+  const run = (action: 'up' | 'down') => {
+    if (action === 'down') {
+      showConfirmModal({
+        title: 'Terminate GPU Pod',
+        message: 'Terminate the GPU pod and stop all hourly billing? Generated clips still on this pod will be cleaned up.',
+        confirmText: '🛑 Terminate Pod',
+        type: 'danger',
+        onConfirm: () => executeRun('down'),
+      })
+      return
+    }
+    executeRun('up')
   }
 
   const running = pod?.status === 'RUNNING'

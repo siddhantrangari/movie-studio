@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useToast } from './Toast'
 
 type UsageRecord = {
   id: string
@@ -58,6 +59,7 @@ type UsageData = {
 type LogLine = { level: 'info' | 'ok' | 'warn' | 'error' | 'done'; text: string }
 
 export default function UsageDashboard() {
+  const { confirm: showConfirmModal, toast } = useToast()
   const [data, setData] = useState<UsageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'openai_prompt' | 'gpu_compute'>('all')
@@ -499,9 +501,16 @@ export default function UsageDashboard() {
 
                           <button
                             onClick={() => {
-                              if (confirm(`Terminate and permanently delete pod ${p.id}? This will halt all billing.`)) {
-                                executePodOperation('terminate', { targetPodId: p.id })
-                              }
+                              showConfirmModal({
+                                title: `Terminate Pod ${p.id}`,
+                                message: `Permanently terminate and destroy pod ${p.id} (${p.gpuDisplayName})? This will halt all hourly compute & storage billing.`,
+                                confirmText: '🛑 Terminate Pod',
+                                type: 'danger',
+                                onConfirm: async () => {
+                                  await executePodOperation('terminate', { targetPodId: p.id })
+                                  toast.success(`Pod ${p.id} terminated.`)
+                                },
+                              })
                             }}
                             disabled={isPerformingAction}
                             style={{

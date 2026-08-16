@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { RESOLUTIONS } from '@/lib/resolutions'
 import PromptBuilderDrawer from './components/PromptBuilderDrawer'
 import UsageDashboard from './components/UsageDashboard'
+import { useToast } from './components/Toast'
 
 type PodData = {
   id: string
@@ -110,13 +111,14 @@ type Film = {
 }
 
 export default function VideoGenClient() {
+  const { confirm: showConfirmModal, toast } = useToast()
   const [pods, setPods] = useState<{ ltx: PodData; minimax: PodData }>({ ltx: null, minimax: null })
   const [deploying, setDeploying] = useState<{ ltx25: boolean; minimax: boolean }>({ ltx25: false, minimax: false })
   const [deployError, setDeployError] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
   const [actionLoading, setActionLoading] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
 
-  // Active Tab navigation: 'home' | 'generations' | 'characters' | 'usage'
-  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'characters' | 'usage'>('home')
+  // Active Tab navigation: 'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'
+  const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'>('home')
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([])
@@ -322,10 +324,18 @@ export default function VideoGenClient() {
     }
   }
 
-  const deleteCharHandler = async (id: string) => {
-    if (!confirm('Delete character and style sheet?')) return
-    await fetch(`/api/videogen/characters?id=${id}`, { method: 'DELETE' })
-    await loadCharacters()
+  const deleteCharHandler = (id: string) => {
+    showConfirmModal({
+      title: 'Delete Character',
+      message: 'Are you sure you want to delete this character and their reference style sheet?',
+      confirmText: '🗑️ Delete Character',
+      type: 'danger',
+      onConfirm: async () => {
+        await fetch(`/api/videogen/characters?id=${id}`, { method: 'DELETE' })
+        await loadCharacters()
+        toast.success('Character deleted.')
+      },
+    })
   }
 
   // Generation trigger
@@ -1102,14 +1112,22 @@ export default function VideoGenClient() {
                                 </a>
                               )}
                               <button
-                                onClick={async () => {
-                                  if (!confirm('Delete this video generation record?')) return
-                                  try {
-                                    await fetch(`/api/videogen/generate?id=${encodeURIComponent(j.id)}`, { method: 'DELETE' })
-                                    setJobs(prev => prev.filter(x => x.id !== j.id && x.promptId !== j.promptId))
-                                  } catch (err) {
-                                    alert((err as Error).message)
-                                  }
+                                onClick={() => {
+                                  showConfirmModal({
+                                    title: 'Delete Generation Record',
+                                    message: 'Delete this video generation record and remove it from your history?',
+                                    confirmText: '🗑️ Delete Record',
+                                    type: 'danger',
+                                    onConfirm: async () => {
+                                      const res = await fetch(`/api/videogen/generate?id=${encodeURIComponent(j.id)}`, { method: 'DELETE' })
+                                      if (!res.ok) {
+                                        const d = await res.json().catch(() => ({}))
+                                        throw new Error(d.error || 'Failed to delete')
+                                      }
+                                      setJobs(prev => prev.filter(x => x.id !== j.id && x.promptId !== j.promptId))
+                                      toast.success('Generation record deleted.')
+                                    },
+                                  })
                                 }}
                                 style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171', borderRadius: '0.35rem', padding: '0.35rem 0.55rem', fontSize: '10.5px', cursor: 'pointer' }}
                                 title="Delete clip from history"
@@ -1236,7 +1254,7 @@ export default function VideoGenClient() {
                               const audio = new Audio(v.previewUrl)
                               audio.play()
                             } else {
-                              alert(`Custom Voice ID: ${charVoiceId}`)
+                              toast.info(`Custom Voice ID: ${charVoiceId}`)
                             }
                           }}
                           style={{

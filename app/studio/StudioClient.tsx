@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { RESOLUTIONS, DEFAULT_RESOLUTION } from '@/lib/resolutions'
+import { useToast } from '../components/Toast'
 
 type Character = {
   id: string
@@ -103,6 +104,7 @@ function totalDuration(scenes: Scene[]) {
 }
 
 export default function StudioClient() {
+  const { confirm: showConfirmModal, toast } = useToast()
   const [characters, setCharacters] = useState<Character[]>([])
   const [board, setBoard] = useState<Storyboard | null>(null)
   const [boards, setBoards] = useState<Storyboard[]>([])
@@ -261,19 +263,23 @@ export default function StudioClient() {
     setBoard(newSb)
   }
 
-  const deleteCurrentStoryboard = async () => {
+  const deleteCurrentStoryboard = () => {
     if (!board) return
-    if (!confirm(`Delete "${board.title}"?`)) return
-    try {
-      const res = await fetch(`/api/videogen/storyboard?id=${board.id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Delete failed')
-      const remaining = boards.filter(b => b.id !== board.id)
-      setBoards(remaining)
-      if (remaining.length > 0) setBoard(remaining[0])
-      else createNewStoryboard()
-    } catch (e) {
-      setErr((e as Error).message)
-    }
+    showConfirmModal({
+      title: 'Delete Storyboard',
+      message: `Are you sure you want to delete storyboard "${board.title}"?`,
+      confirmText: '🗑️ Delete Storyboard',
+      type: 'danger',
+      onConfirm: async () => {
+        const res = await fetch(`/api/videogen/storyboard?id=${board.id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
+        const remaining = boards.filter((b) => b.id !== board.id)
+        setBoards(remaining)
+        if (remaining.length > 0) setBoard(remaining[0])
+        else createNewStoryboard()
+        toast.success(`Deleted "${board.title}"`)
+      },
+    })
   }
 
   const generateScene = async (sceneId: string) => {
@@ -333,10 +339,18 @@ export default function StudioClient() {
     }
   }
 
-  const removeFilm = async (id: string) => {
-    if (!confirm('Delete this assembled movie?')) return
-    await fetch(`/api/videogen/assemble?id=${id}`, { method: 'DELETE' })
-    await loadFilms()
+  const removeFilm = (id: string) => {
+    showConfirmModal({
+      title: 'Delete Assembled Film',
+      message: 'Delete this rendered master movie file from your records?',
+      confirmText: '🗑️ Delete Film',
+      type: 'danger',
+      onConfirm: async () => {
+        await fetch(`/api/videogen/assemble?id=${id}`, { method: 'DELETE' })
+        await loadFilms()
+        toast.success('Assembled movie removed.')
+      },
+    })
   }
 
   const addCharacterHandler = async () => {
@@ -361,10 +375,18 @@ export default function StudioClient() {
     }
   }
 
-  const deleteCharacterHandler = async (id: string) => {
-    if (!confirm('Delete character?')) return
-    await fetch(`/api/videogen/characters?id=${id}`, { method: 'DELETE' })
-    await loadCharacters()
+  const deleteCharacterHandler = (id: string) => {
+    showConfirmModal({
+      title: 'Delete Character',
+      message: 'Are you sure you want to delete this character?',
+      confirmText: '🗑️ Delete',
+      type: 'danger',
+      onConfirm: async () => {
+        await fetch(`/api/videogen/characters?id=${id}`, { method: 'DELETE' })
+        await loadCharacters()
+        toast.success('Character deleted.')
+      },
+    })
   }
 
   const generateVoiceoverHandler = async (scene: Scene) => {
@@ -895,9 +917,17 @@ export default function StudioClient() {
                         <button onClick={() => moveScene(idx, 'down')} disabled={idx === total - 1} style={{ background: '#0e182e', border: '1px solid #1a2840', color: '#94a3b8', borderRadius: '0.25rem', padding: '0.15rem 0.4rem', fontSize: '10px', cursor: idx === total - 1 ? 'not-allowed' : 'pointer' }}>▼</button>
                         <button
                           onClick={() => {
-                            if (!confirm('Remove this shot?')) return
-                            const nextScenes = board.scenes.filter(x => x.id !== scene.id)
-                            update({ scenes: nextScenes })
+                            showConfirmModal({
+                              title: 'Remove Shot',
+                              message: `Remove Shot #${scene.order}: "${scene.title || 'Untitled'}" from storyboard?`,
+                              confirmText: '🗑️ Remove Shot',
+                              type: 'danger',
+                              onConfirm: () => {
+                                const nextScenes = board.scenes.filter((x) => x.id !== scene.id)
+                                update({ scenes: nextScenes })
+                                toast.success('Shot removed.')
+                              },
+                            })
                           }}
                           style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '11px', cursor: 'pointer', marginLeft: '0.5rem' }}
                         >
