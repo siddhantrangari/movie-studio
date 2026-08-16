@@ -842,7 +842,7 @@ export default function VideoGenClient() {
         <div style={{ padding: '2.5rem', maxWidth: '64rem', margin: '0 auto', width: '100%' }}>
 
           {/* Tab 1: HOME GENERATION VIEW */}
-          {activeTab === 'home' && (
+          <div style={{ display: activeTab === 'home' ? 'block' : 'none' }}>
             <>
               <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
                 <h2 style={{
@@ -1381,10 +1381,10 @@ export default function VideoGenClient() {
                 </div>
               </div>
             </>
-          )}
+          </div>
 
           {/* Tab 2: MY GENERATIONS HISTORY */}
-          {activeTab === 'generations' && (
+          <div style={{ display: activeTab === 'generations' ? 'block' : 'none' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div>
@@ -1655,10 +1655,10 @@ export default function VideoGenClient() {
                 </div>
               )}
             </div>
-          )}
+          </div>
 
           {/* Tab 3: CHARACTERS & STYLE SHEET MANAGER */}
-          {activeTab === 'characters' && (
+          <div style={{ display: activeTab === 'characters' ? 'block' : 'none' }}>
             <div>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--gold)', marginBottom: '1rem' }}>
                 CHARACTER STYLE SHEETS & VOICE MAPPING
@@ -1800,10 +1800,10 @@ export default function VideoGenClient() {
                 ))}
               </div>
             </div>
-          )}
+          </div>
 
           {/* TAB: SINGING & MUSIC VIDEO STUDIO */}
-          {activeTab === 'singing' && (
+          <div style={{ display: activeTab === 'singing' ? 'block' : 'none' }}>
             <SingingStudio
               projectId={activeProjectId}
               characters={characters.map(c => ({ id: c.id, name: c.name, imageUrl: c.imageFile ? `/api/videogen/characters?file=${encodeURIComponent(c.imageFile)}` : undefined }))}
@@ -1814,21 +1814,21 @@ export default function VideoGenClient() {
               }}
               onNavigateToEngines={() => setActiveTab('engines')}
             />
-          )}
+          </div>
 
           {/* TAB 4: USAGE & COST MONITOR */}
-          {activeTab === 'usage' && (
+          <div style={{ display: activeTab === 'usage' ? 'block' : 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem 0' }}>
               <UsageDashboard />
             </div>
-          )}
+          </div>
 
           {/* TAB 5: AI ENGINES & COMPUTE HUB */}
-          {activeTab === 'engines' && (
+          <div style={{ display: activeTab === 'engines' ? 'block' : 'none' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', padding: '0.5rem 0' }}>
               <EnginesHub onNavigateToGen={() => setActiveTab('home')} />
             </div>
-          )}
+          </div>
         </div>
       </main>
 

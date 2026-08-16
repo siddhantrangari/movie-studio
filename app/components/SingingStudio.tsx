@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useToast } from './Toast'
 
 export interface MusicScene {
@@ -83,6 +83,57 @@ export default function SingingStudio({
 
   const audioInputRef = useRef<HTMLInputElement>(null)
   const performerInputRef = useRef<HTMLInputElement>(null)
+
+  // Load persisted state on mount
+  useEffect(() => {
+    try {
+      const storageKey = `singing_studio_${projectId || 'default'}`
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.songTitle) setSongTitle(parsed.songTitle)
+        if (parsed.genre) setGenre(parsed.genre)
+        if (parsed.mood) setMood(parsed.mood)
+        if (parsed.lyricsTheme) setLyricsTheme(parsed.lyricsTheme)
+        if (parsed.stylePreset) setStylePreset(parsed.stylePreset)
+        if (parsed.performerDesc) setPerformerDesc(parsed.performerDesc)
+        if (parsed.selectedPerformerUrl) setSelectedPerformerUrl(parsed.selectedPerformerUrl)
+        if (parsed.songDuration) setSongDuration(parsed.songDuration)
+        if (parsed.segmentDuration) setSegmentDuration(parsed.segmentDuration)
+        if (parsed.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) setScenes(parsed.scenes)
+        if (parsed.logline) setLogline(parsed.logline)
+        if (parsed.assembledVideoUrl) setAssembledVideoUrl(parsed.assembledVideoUrl)
+        if (parsed.songAudioBase64) setSongAudioBase64(parsed.songAudioBase64)
+      }
+    } catch {
+      // ignore
+    }
+  }, [projectId])
+
+  // Persist state to localStorage whenever critical fields change
+  useEffect(() => {
+    try {
+      const storageKey = `singing_studio_${projectId || 'default'}`
+      const stateToSave = {
+        songTitle,
+        genre,
+        mood,
+        lyricsTheme,
+        stylePreset,
+        performerDesc,
+        selectedPerformerUrl,
+        songDuration,
+        segmentDuration,
+        scenes,
+        logline,
+        assembledVideoUrl,
+        songAudioBase64: songAudioBase64 && songAudioBase64.length < 2000000 ? songAudioBase64 : '',
+      }
+      localStorage.setItem(storageKey, JSON.stringify(stateToSave))
+    } catch {
+      // ignore
+    }
+  }, [projectId, songTitle, genre, mood, lyricsTheme, stylePreset, performerDesc, selectedPerformerUrl, songDuration, segmentDuration, scenes, logline, assembledVideoUrl, songAudioBase64])
 
   // Audio file handler
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
