@@ -76,7 +76,6 @@ Respond ONLY with valid JSON in this exact structure:
         },
         body: JSON.stringify({
           model,
-          temperature: 0.85,
           messages: [
             { role: 'system', content: MUSIC_VIDEO_DIRECTOR_PROMPT },
             { role: 'user', content: userPrompt },
@@ -155,7 +154,6 @@ Respond ONLY with valid JSON in this exact structure:
       },
       body: JSON.stringify({
         model,
-        temperature: 0.8,
         messages: [
           { role: 'system', content: MUSIC_VIDEO_DIRECTOR_PROMPT },
           { role: 'user', content: userPrompt },
