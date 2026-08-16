@@ -149,6 +149,14 @@ export default function VideoGenClient() {
   const [deployError, setDeployError] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
   const [actionLoading, setActionLoading] = useState<{ ltx25: string | null; minimax: string | null }>({ ltx25: null, minimax: null })
   const [fleetModalTab, setFleetModalTab] = useState<'ltx25' | 'minimax'>('ltx25')
+  const [deployLogs, setDeployLogs] = useState<{ level: string; text: string }[]>([])
+  const logTerminalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (logTerminalRef.current) {
+      logTerminalRef.current.scrollTop = logTerminalRef.current.scrollHeight
+    }
+  }, [deployLogs])
 
   // Active Tab navigation: 'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'
   const [activeTab, setActiveTab] = useState<'home' | 'generations' | 'canvas' | 'characters' | 'audio' | 'usage' | 'settings'>('home')
@@ -455,24 +463,54 @@ export default function VideoGenClient() {
     setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: true }))
     setDeployingTier(tier)
     setDeployError(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: null }))
+    const modelTitle = isLtx ? (tier === 'ultra_4k' ? 'LTX 2.5 Ultra 4K (48GB+)' : 'LTX 2.5 Standard (24GB)') : 'MiniMax Hailuo 3 (48GB+)'
+    setDeployLogs([{ level: 'info', text: `Initiating ${modelTitle} deployment on RunPod...` }])
     try {
       const res = await fetch('/api/videogen/pod', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'up', tier, terminatePodId }),
+        body: JSON.stringify({ action: 'up', tier, model, terminatePodId }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Deployment failed')
       }
+      if (res.body) {
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() ?? ''
+          for (const raw of lines) {
+            if (!raw.trim()) continue
+            try {
+              const line = JSON.parse(raw)
+              if (line.level === 'done') {
+                toast.success(`${modelTitle} Node is ready!`)
+                await fetchStatus()
+              } else {
+                setDeployLogs(prev => [...prev, line])
+              }
+            } catch {
+              // ignore parse errors
+            }
+          }
+        }
+      }
       await fetchStatus()
     } catch (e) {
       setDeployError(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: (e as Error).message }))
+      setDeployLogs(prev => [...prev, { level: 'error', text: (e as Error).message }])
     } finally {
       setDeploying(prev => ({ ...prev, [isLtx ? 'ltx25' : 'minimax']: false }))
       setDeployingTier(null)
       setShow4kModal(false)
       setPromptDeployConflict(null)
+      await fetchStatus()
     }
   }
 
@@ -1620,6 +1658,48 @@ export default function VideoGenClient() {
                 {minimaxRunning && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80' }} />}
               </button>
             </div>
+
+            {/* Live Terminal & Streaming Provisioning Log */}
+            {deployLogs.length > 0 && (
+              <div style={{ background: '#05080e', border: '1px solid #1a2840', borderRadius: '0.6rem', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1a2840', paddingBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                    📟 Live Deployment & Boot Logs
+                  </span>
+                  {(deploying.ltx25 || deploying.minimax) ? (
+                    <span style={{ fontSize: '9.5px', color: '#4ade80', fontWeight: 700 }}>
+                      ● STREAMING RUNPOD LOGS...
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setDeployLogs([])}
+                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '9.5px', cursor: 'pointer' }}
+                    >
+                      Clear Log
+                    </button>
+                  )}
+                </div>
+                <div
+                  ref={logTerminalRef}
+                  style={{
+                    maxHeight: '140px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '10px', lineHeight: 1.4,
+                    display: 'flex', flexDirection: 'column', gap: '0.2rem', padding: '0.2rem 0'
+                  }}
+                >
+                  {deployLogs.map((l, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        color: l.level === 'ok' ? '#4ade80' : l.level === 'warn' ? '#fbbf24' : l.level === 'error' ? '#f87171' : '#93c5fd'
+                      }}
+                    >
+                      {l.level === 'ok' ? '✓ ' : l.level === 'warn' ? '⚠ ' : l.level === 'error' ? '✖ ' : '▶ '}
+                      {l.text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* In-UI Conflict Resolution Dialog */}
             {promptDeployConflict ? (
