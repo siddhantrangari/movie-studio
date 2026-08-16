@@ -79,9 +79,10 @@ export function buildMiniMaxWorkflow(p: GenParams) {
   // 2-Stage Multi-Scale Pipeline:
   // Base diffusion latent generated at 768x432 (16:9) with 16 distilled flow-matching steps (5.2x faster!).
   // Then decoded and upscaled using high-fidelity GPU Lanczos super-resolution in <1 second to target resolution (720p/1080p/4K).
+  // MiniMax Hailuo 3 natively generates 1280x720 (16:9) video with synchronized stereo audio.
   const isWidescreen = targetWidth >= targetHeight
-  const baseWidth = isWidescreen ? 768 : 432
-  const baseHeight = isWidescreen ? 432 : 768
+  const baseWidth = isWidescreen ? (targetWidth >= 1920 ? 1280 : targetWidth) : (targetHeight >= 1920 ? 720 : targetWidth)
+  const baseHeight = isWidescreen ? (targetHeight >= 1080 ? 720 : targetHeight) : (targetWidth >= 1080 ? 1280 : targetHeight)
 
   const wf: Record<string, unknown> = {
     // ── Model loading ──────────────────────────────────────────────────────────
@@ -90,9 +91,9 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     '3': { class_type: 'VAELoader', inputs: { vae_name: 'minimax_h3_video_vae_fp16.safetensors' } },
     // ── Text conditioning ──────────────────────────────────────────────────────
     '4': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: p.prompt } },
-    // ── MiniMax H3 video latent (Fast Base 768x432) ───────────────────────────
+    // ── MiniMax H3 video & audio latent (Native Multimodal Latent Space) ───────
     '6': { class_type: 'EmptyMiniMaxH3LatentAV', inputs: { width: baseWidth, height: baseHeight, length: frames, batch_size: 1 } },
-    // ── Sampling (Fast 16 distilled flow-matching steps) ──────────────────────
+    // ── Sampling (Distilled flow-matching sampling) ───────────────────────────
     '7': {
       class_type: 'KSampler',
       inputs: {
@@ -101,16 +102,18 @@ export function buildMiniMaxWorkflow(p: GenParams) {
         negative: ['4', 0],   // CFG=1 — flow matching distillation
         latent_image: ['6', 0],
         seed,
-        steps: 16,
+        steps: 18,
         cfg: 1.0,
         sampler_name: 'euler',
         scheduler: 'simple',
         denoise: 1.0,
       },
     },
-    // ── Decode ─────────────────────────────────────────────────────────────────
+    // ── Video Frame Decode ─────────────────────────────────────────────────────
     '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
-    // ── Stage 2: Fast High-Fidelity GPU Super-Resolution ───────────────────────
+    // ── Native Stereo Audio Decode ─────────────────────────────────────────────
+    '8b': { class_type: 'VAEDecodeAudio', inputs: { samples: ['7', 0], vae: ['3', 0] } },
+    // ── High-Fidelity GPU Super-Resolution (if target > base) ──────────────────
     '8a': {
       class_type: 'ImageScale',
       inputs: {
@@ -121,11 +124,11 @@ export function buildMiniMaxWorkflow(p: GenParams) {
         crop: 'disabled',
       },
     },
-    // ── Video Export ───────────────────────────────────────────────────────────
-    '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], fps } },
+    // ── Video + Synchronized Audio Export ──────────────────────────────────────
+    '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], audio: ['8b', 0], fps } },
     '10': {
       class_type: 'SaveVideo',
-      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
+      inputs: { video: ['9', 0], audio: ['8b', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
     },
   }
 
