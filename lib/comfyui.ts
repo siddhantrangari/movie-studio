@@ -106,17 +106,11 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     },
     // ── Decode & save ──────────────────────────────────────────────────────────
     '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
-    '9': {
-      class_type: 'VHS_VideoCombine',
-      inputs: {
-        images: ['8', 0],
-        frame_rate: fps,
-        loop_count: 0,
-        filename_prefix: 'gen/minimax',
-        format: 'video/h264-mp4',
-        pingpong: false,
-        save_output: true,
-      },
+    // CreateVideo: IMAGE[] → VIDEO; SaveVideo: VIDEO → disk (outputs 'videos' key)
+    '9': { class_type: 'CreateVideo', inputs: { images: ['8', 0], fps } },
+    '10': {
+      class_type: 'SaveVideo',
+      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
     },
   }
 
@@ -283,10 +277,11 @@ export async function getJobStatus(podId: string, promptId: string): Promise<Job
     }
     const saved = Object.values(entry.outputs ?? {}).find(
       (o) => (o as { images?: unknown[] })?.images?.length ||
-              (o as { gifs?: unknown[] })?.gifs?.length   // VHS_VideoCombine uses 'gifs'
-    ) as { images?: { filename: string; subfolder: string }[]; gifs?: { filename: string; subfolder: string }[] } | undefined
+              (o as { gifs?: unknown[] })?.gifs?.length ||    // VHS_VideoCombine
+              (o as { videos?: unknown[] })?.videos?.length   // SaveVideo (native)
+    ) as { images?: { filename: string; subfolder: string }[]; gifs?: { filename: string; subfolder: string }[]; videos?: { filename: string; subfolder: string }[] } | undefined
     if (saved) {
-      const file = saved.gifs?.[0] ?? saved.images?.[0]
+      const file = saved.videos?.[0] ?? saved.gifs?.[0] ?? saved.images?.[0]
       if (file) return { state: 'done', filename: file.filename, subfolder: file.subfolder }
     }
   }
