@@ -134,3 +134,63 @@ export async function POST(req: NextRequest) {
   )
 }
 
+// PUT /api/videogen — stop, resume, or terminate a pod
+export async function PUT(req: NextRequest) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { model, action } = await req.json()
+  if (!['ltx25', 'minimax'].includes(model)) {
+    return NextResponse.json({ error: 'Invalid model' }, { status: 400 })
+  }
+
+  const pods = await listPods()
+  const name = model === 'ltx25' ? POD_NAMES.ltx25 : POD_NAMES.minimax
+  const pod = pods.find((p) => p.name === name)
+
+  if (!pod?.id) {
+    return NextResponse.json({ error: 'Pod not found or already stopped' }, { status: 404 })
+  }
+
+  const podId = pod.id
+
+  if (action === 'stop') {
+    const res = await fetch('https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `mutation { podStop(input: { podId: "${podId}" }) { id desiredStatus } }`,
+      }),
+    })
+    const json = await res.json()
+    return NextResponse.json({ success: true, result: json?.data?.podStop ?? json })
+  } else if (action === 'start') {
+    const res = await fetch('https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `mutation { podResume(input: { podId: "${podId}", gpuCount: 1 }) { id desiredStatus } }`,
+      }),
+    })
+    const json = await res.json()
+    return NextResponse.json({ success: true, result: json?.data?.podResume ?? json })
+  } else if (action === 'terminate' || action === 'down') {
+    const res = await fetch(`${RUNPOD_API}/pods/${podId}`, {
+      method: 'DELETE',
+      headers: restHeaders(),
+    })
+    const result = await res.json().catch(() => ({ deleted: true }))
+    return NextResponse.json({ success: true, result })
+  }
+
+  return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+}
+
+

@@ -229,6 +229,10 @@ export default function VideoGenClient() {
         setInitialLoading(false)
       }
     })()
+
+    // Auto-poll GPU pod status every 15s so node states stay in sync
+    const interval = setInterval(fetchStatus, 15_000)
+    return () => clearInterval(interval)
   }, [fetchStatus, loadProjects, loadCharacters, loadFilms, loadVoices])
 
   const createProject = async () => {
@@ -1289,16 +1293,58 @@ export default function VideoGenClient() {
                 <p style={{ fontSize: '10px', color: '#64748b', margin: '0.15rem 0 0' }}>RTX L40S GPU</p>
               </div>
               <div style={{ fontSize: '11px', color: ltxRunning ? '#4ade80' : '#f87171', fontWeight: 700 }}>
-                Status: {ltxRunning ? 'RUNNING' : 'OFFLINE'}
+                Status: {ltxRunning ? 'RUNNING (Online)' : 'OFFLINE (Stopped)'}
               </div>
+
+              {deployError.ltx25 && (
+                <div style={{ padding: '0.5rem', background: 'rgba(248,113,113,0.1)', border: '1px solid #f87171', borderRadius: '0.35rem', color: '#f87171', fontSize: '10.5px' }}>
+                  ⚠️ {deployError.ltx25}
+                </div>
+              )}
+
               {!ltxRunning ? (
-                <button onClick={() => deploy('ltx25')} disabled={deploying.ltx25} style={{ width: '100%', padding: '0.5rem', border: 'none', borderRadius: '0.3rem', background: 'var(--gold)', color: '#05080e', fontWeight: 800, fontSize: '11px', cursor: 'pointer' }}>
-                  {deploying.ltx25 ? 'Deploying...' : 'Deploy Node'}
+                <button
+                  onClick={() => deploy('ltx25')}
+                  disabled={deploying.ltx25}
+                  style={{
+                    width: '100%', padding: '0.6rem', border: 'none', borderRadius: '0.4rem',
+                    background: deploying.ltx25 ? '#1a2840' : 'var(--gold)',
+                    color: deploying.ltx25 ? '#64748b' : '#05080e',
+                    fontWeight: 800, fontSize: '11.5px', cursor: deploying.ltx25 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {deploying.ltx25 ? '⚡ Deploying GPU Node...' : '🚀 Start / Deploy GPU Node'}
                 </button>
               ) : (
-                <button onClick={() => podAction('ltx25', 'stop')} disabled={actionLoading.ltx25 === 'stop'} style={{ width: '100%', padding: '0.5rem', border: 'none', borderRadius: '0.3rem', background: '#ef4444', color: '#ffffff', fontWeight: 800, fontSize: '11px', cursor: 'pointer' }}>
-                  {actionLoading.ltx25 === 'stop' ? 'Stopping...' : 'Stop Node'}
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => podAction('ltx25', 'stop')}
+                    disabled={!!actionLoading.ltx25}
+                    style={{
+                      flex: 1, padding: '0.6rem', border: '1px solid rgba(248,113,113,0.4)', borderRadius: '0.4rem',
+                      background: actionLoading.ltx25 === 'stop' ? '#1a2840' : 'rgba(248,113,113,0.15)',
+                      color: actionLoading.ltx25 === 'stop' ? '#94a3b8' : '#f87171',
+                      fontWeight: 800, fontSize: '11px', cursor: actionLoading.ltx25 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {actionLoading.ltx25 === 'stop' ? '⏳ Stopping Node...' : '⏸️ Stop Node'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Terminate GPU pod? This destroys the pod and halts all hourly billing.')) {
+                        podAction('ltx25', 'terminate')
+                      }
+                    }}
+                    disabled={!!actionLoading.ltx25}
+                    style={{
+                      flex: 1, padding: '0.6rem', border: 'none', borderRadius: '0.4rem',
+                      background: actionLoading.ltx25 === 'terminate' ? '#1a2840' : '#ef4444',
+                      color: '#ffffff', fontWeight: 800, fontSize: '11px', cursor: actionLoading.ltx25 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {actionLoading.ltx25 === 'terminate' ? '⏳ Terminating...' : '🛑 Terminate & Stop Billing'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
