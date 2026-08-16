@@ -614,8 +614,8 @@ async function* awaitProvisioning(
       return
     }
 
-    if (!sawLog && i >= 30) {
-      yield { level: 'warn', text: 'Container image pull stalled on this host (5 min) — auto-terminating to find a responsive host.' }
+    if (!sawLog && i >= 60) {
+      yield { level: 'warn', text: 'Container image pull stalled on this host (10 min) — auto-terminating to find a responsive host.' }
       outcome.hostBroken = true
       return
     }
