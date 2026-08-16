@@ -374,22 +374,7 @@ export async function findVolume(model?: PodModel): Promise<{ id: string; name: 
   const { data } = await api('/networkvolumes')
   if (!Array.isArray(data) || data.length === 0) return null
 
-  // 1. Check for dedicated shared volume across all studio engines (>=100GB preferred)
-  const sharedBig = data.find((vol: { name?: string; size?: number }) =>
-    vol.name && vol.name.includes('studio-models') && (vol.size ?? 0) >= 100
-  )
-  if (sharedBig?.id) {
-    return { id: String(sharedBig.id), name: String(sharedBig.name), dataCenterId: String(sharedBig.dataCenterId ?? ''), size: Number(sharedBig.size ?? 0) }
-  }
-
-  const shared = data.find((vol: { name?: string }) =>
-    vol.name && ['studio-models', 'studio-models-ca', 'ai-models', 'comfyui-models', 'movie-studio-models', 'shared-models'].includes(vol.name)
-  )
-  if (shared?.id) {
-    return { id: String(shared.id), name: String(shared.name), dataCenterId: String(shared.dataCenterId ?? ''), size: Number(shared.size ?? 0) }
-  }
-
-  // 2. Check for model-specific volume (e.g. ltx25-models or minimax-h3-models)
+  // 1. Check for model-specific volume by exact name (e.g. ltx25-models or minimax-h3-models)
   if (model) {
     const specific = data.find((vol: { name?: string }) => vol.name === VOLUME_NAMES[model])
     if (specific?.id) {
@@ -397,7 +382,22 @@ export async function findVolume(model?: PodModel): Promise<{ id: string; name: 
     }
   }
 
-  // 3. Fallback: use any existing volume on the account so weights persist
+  // 2. Any large (≥100GB) volume — safe for both LTX and MiniMax weights
+  //    This catches the common case of ltx25-models (200GB) being used for MiniMax too.
+  const anyLarge = data.find((vol: { name?: string; size?: number }) => (vol.size ?? 0) >= 100)
+  if (anyLarge?.id) {
+    return { id: String(anyLarge.id), name: String(anyLarge.name), dataCenterId: String(anyLarge.dataCenterId ?? ''), size: Number(anyLarge.size ?? 0) }
+  }
+
+  // 3. Named shared volumes (smaller but acceptable)
+  const shared = data.find((vol: { name?: string }) =>
+    vol.name && ['studio-models', 'studio-models-ca', 'ai-models', 'comfyui-models', 'movie-studio-models', 'shared-models'].includes(vol.name)
+  )
+  if (shared?.id) {
+    return { id: String(shared.id), name: String(shared.name), dataCenterId: String(shared.dataCenterId ?? ''), size: Number(shared.size ?? 0) }
+  }
+
+  // 4. Fallback: use any volume so weights persist at all
   const first = data[0]
   if (first?.id) {
     return { id: String(first.id), name: String(first.name ?? 'network-volume'), dataCenterId: String(first.dataCenterId ?? ''), size: Number(first.size ?? 0) }
