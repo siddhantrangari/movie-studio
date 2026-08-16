@@ -374,7 +374,9 @@ export default function VideoGenClient() {
         startedAt: Date.now(),
       }, ...prev])
     } catch (e) {
-      setGenError((e as Error).message)
+      const msg = (e as Error).message
+      setGenError(msg)
+      toast.error(msg)
     } finally {
       setSubmitting(false)
     }
@@ -830,6 +832,18 @@ export default function VideoGenClient() {
                     <span style={{ fontSize: '10px', opacity: 0.7 }}>45 credits</span>
                   </button>
                 </div>
+
+                {genError && (
+                  <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.9rem', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '12px', color: '#fca5a5' }}>⚠️ {genError}</span>
+                    <button
+                      onClick={() => { setShowPodDrawer(true); setGenError(null) }}
+                      style={{ background: 'var(--gold)', color: '#05080e', border: 'none', borderRadius: '0.35rem', padding: '0.3rem 0.7rem', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      ⚡ Start GPU Pod →
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* ── Inline generation progress ── */}
