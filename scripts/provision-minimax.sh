@@ -190,11 +190,15 @@ do_models() {
     fetch "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors" \
           "$models/vae" "minimax_h3_video_vae_fp16.safetensors"
 
+    fetch "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors" \
+          "$models/vae" "minimax_h3_audio_vae_fp32.safetensors"
+
     ln -sfn ../diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors "$models/checkpoints/minimax_h3_fl2va_int8_convrot.safetensors"
     ln -sfn ../diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors "$models/diffusion_models/minimax-h3-int8.safetensors"
     ln -sfn ../text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors "$models/clip/qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
     ln -sfn ../text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors "$models/clip/t5xxl_fp8_e4m3fn.safetensors"
     ln -sfn ../vae/minimax_h3_video_vae_fp16.safetensors "$models/vae/vae.safetensors"
+    ln -sfn ../vae/minimax_h3_audio_vae_fp32.safetensors "$models/vae/audio_vae.safetensors"
     ok "MiniMax Hailuo 3 models in place"
 }
 

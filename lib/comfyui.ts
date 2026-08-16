@@ -89,6 +89,7 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     '1': { class_type: 'UNETLoader', inputs: { unet_name: 'minimax_h3_fl2va_int8_convrot.safetensors', weight_dtype: 'default' } },
     '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_32b_minimax_h3_int8_convrot.safetensors', type: 'minimax' } },
     '3': { class_type: 'VAELoader', inputs: { vae_name: 'minimax_h3_video_vae_fp16.safetensors' } },
+    '3b': { class_type: 'VAELoader', inputs: { vae_name: 'minimax_h3_audio_vae_fp32.safetensors' } },
     // ── Text conditioning ──────────────────────────────────────────────────────
     '4': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: p.prompt } },
     // ── MiniMax H3 video & audio latent (Native Multimodal Latent Space) ───────
@@ -111,6 +112,8 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     },
     // ── Video Frame Decode ─────────────────────────────────────────────────────
     '8': { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } },
+    // ── Synchronized Stereo Audio & Lipsync Decode ─────────────────────────────
+    '8b': { class_type: 'VAEDecodeAudio', inputs: { samples: ['7', 0], vae: ['3b', 0] } },
     // ── High-Fidelity GPU Super-Resolution (if target > base) ──────────────────
     '8a': {
       class_type: 'ImageScale',
@@ -122,11 +125,11 @@ export function buildMiniMaxWorkflow(p: GenParams) {
         crop: 'disabled',
       },
     },
-    // ── Video Export ───────────────────────────────────────────────────────────
-    '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], fps } },
+    // ── Video + Synced Audio Multiplexing ──────────────────────────────────────
+    '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], audio: ['8b', 0], fps } },
     '10': {
       class_type: 'SaveVideo',
-      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
+      inputs: { video: ['9', 0], audio: ['8b', 0], filename_prefix: 'gen/minimax', format: 'mp4', codec: 'h264' },
     },
   }
 
