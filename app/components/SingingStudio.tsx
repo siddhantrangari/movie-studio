@@ -841,6 +841,47 @@ export default function SingingStudio({
                   }}
                 />
 
+                {/* Generating Live Animation & Progress */}
+                {sc.status === 'generating' && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(232, 185, 74, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%)',
+                    border: '1px solid rgba(232, 185, 74, 0.3)',
+                    borderRadius: '0.5rem',
+                    padding: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.4rem',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                      <span style={{ color: 'var(--gold)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span>✨</span>
+                        <span>MiniMax Ref2VA Lip-Syncing & Neural Rendering...</span>
+                      </span>
+                      <span style={{ color: '#F2F5FA', fontWeight: 800 }}>
+                        {sc.progress ? `${Math.round(sc.progress)}%` : 'Rendering Frames...'}
+                      </span>
+                    </div>
+
+                    {/* Shimmering Animated Progress Bar */}
+                    <div style={{
+                      width: '100%',
+                      height: '6px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '3px',
+                      overflow: 'hidden',
+                      position: 'relative',
+                    }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.max(15, sc.progress || 25)}%`,
+                        background: 'linear-gradient(90deg, #e8b94a, #c084fc, #e8b94a)',
+                        borderRadius: '3px',
+                        transition: 'width 0.4s ease',
+                      }} />
+                    </div>
+                  </div>
+                )}
+
                 {/* Video Preview if Done */}
                 {sc.videoUrl && (
                   <div style={{ marginTop: '0.25rem', borderRadius: '0.5rem', overflow: 'hidden', background: '#000', maxHeight: '180px', display: 'flex', justifyContent: 'center' }}>

@@ -13,13 +13,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const ids = (req.nextUrl.searchParams.get('ids') ?? '')
+  const rawParam = req.nextUrl.searchParams.get('promptId') || req.nextUrl.searchParams.get('ids') || ''
+  const ids = rawParam
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
 
+  const explicitPodId = req.nextUrl.searchParams.get('podId')
   const requestedModel = req.nextUrl.searchParams.get('model') as 'ltx25' | 'minimax' | null
-  const podId = requestedModel ? (await getRunningPodId(requestedModel)) : ((await getRunningPodId('ltx25')) || (await getRunningPodId('minimax')))
+  const podId = explicitPodId || (requestedModel ? (await getRunningPodId(requestedModel)) : ((await getRunningPodId('minimax')) || (await getRunningPodId('ltx25'))))
   if (!podId) {
     return NextResponse.json({ error: 'Pod not running', jobs: {} }, { status: 409 })
   }
@@ -72,5 +74,16 @@ export async function GET(req: NextRequest) {
     })
   )
 
-  return NextResponse.json({ podId, jobs: Object.fromEntries(entries) })
+  const singleJob = ids.length === 1 ? entries[0]?.[1] : null
+  const jobsMap = Object.fromEntries(entries)
+
+  return NextResponse.json({
+    podId,
+    jobs: jobsMap,
+    state: singleJob?.state,
+    filename: singleJob?.filename,
+    subfolder: singleJob?.subfolder,
+    videoUrl: singleJob?.filename ? `/api/videogen/video?file=${encodeURIComponent(singleJob.filename)}` : undefined,
+    error: singleJob?.error,
+  })
 }
