@@ -266,10 +266,10 @@ export function buildWorkflow(p: GenParams) {
     },
   }
 
-  const initialFrame = p.startFrame || (p.referenceImage ? p.referenceImage : undefined)
+  const initialFrame = p.startFrame || (p.referenceImages && p.referenceImages.length > 0 ? p.referenceImages[0] : (p.referenceImage ? p.referenceImage : undefined))
 
   if (initialFrame) {
-    // Image-to-video: initial frame seeds continuous action/camera from previous shot (Last-to-First)
+    // Image-to-video: seeds exact character/couple appearance from attached image or chained previous shot
     wf['7a'] = { class_type: 'LoadImage', inputs: { image: initialFrame } }
     wf['7'] = {
       class_type: 'LTXVImgToVideo',
