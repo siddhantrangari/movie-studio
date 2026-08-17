@@ -107,6 +107,25 @@ export async function GET(req: NextRequest) {
                 costUsd: cost,
                 details: `Rendered "${sb.title} - Shot #${scene.order}: ${scene.title}" (${scene.seconds}s clip in ${renderSecs}s GPU time)`,
               })
+
+              // Persist clip to local storage & R2 immediately so it never expires
+              if (status.filename) {
+                const { fetchVideo } = await import('@/lib/comfyui')
+                const { hasLocalClip, persistClip } = await import('@/lib/storage')
+                if (!hasLocalClip(status.filename)) {
+                  fetchVideo(podId, status.filename, status.subfolder || 'gen')
+                    .then(async (res) => {
+                      if (res.ok && res.body) {
+                        const arrayBuf = await res.arrayBuffer()
+                        const buf = Buffer.from(arrayBuf)
+                        if (buf.length > 0) {
+                          await persistClip(status.filename!, buf, { projectId: sb.projectId })
+                        }
+                      }
+                    })
+                    .catch(() => {})
+                }
+              }
             }
           }
         }
