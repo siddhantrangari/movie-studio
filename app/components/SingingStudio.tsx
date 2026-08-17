@@ -323,6 +323,79 @@ export default function SingingStudio({
     toast.info(`Scene Part #${index + 1} generation cancelled.`)
   }
 
+  // Delete a single scene part
+  const handleDeleteScene = (index: number) => {
+    cancelledRef.current[index] = true
+    if (currentGeneratingIndex === index) {
+      setCurrentGeneratingIndex(null)
+    }
+    setScenes((prev) => {
+      const filtered = prev.filter((_, idx) => idx !== index)
+      let curSec = 0
+      return filtered.map((s, idx) => {
+        const dur = s.durationSec || segmentDuration
+        const start = curSec
+        const end = curSec + dur
+        curSec = end
+        return {
+          ...s,
+          order: idx + 1,
+          startSec: start,
+          endSec: end,
+        }
+      })
+    })
+    toast.info(`Scene Part #${index + 1} removed.`)
+  }
+
+  // Add a new scene part manually
+  const handleAddScene = () => {
+    const lastScene = scenes[scenes.length - 1]
+    const startSec = lastScene ? lastScene.endSec : 0
+    const endSec = startSec + segmentDuration
+    const newPartNum = scenes.length + 1
+    const newScene: MusicScene = {
+      order: newPartNum,
+      title: `Part ${newPartNum} Scene`,
+      startSec,
+      endSec,
+      durationSec: segmentDuration,
+      camera: 'Medium close-up slow push in',
+      lighting: 'Neon stage lighting',
+      prompt: `<Picture 1> is the identity reference for the ${performerDesc}. <Audio 1> is the vocal reference for "${songTitle}". The singer performs with expressive lip sync and charisma under ${stylePreset.toLowerCase()} atmosphere.`,
+      status: 'idle',
+    }
+    setScenes((prev) => [...prev, newScene])
+    toast.success(`Part #${newPartNum} added to storyboard.`)
+  }
+
+  // Dismiss / Clear all storyboard scenes
+  const handleClearStoryboard = () => {
+    scenes.forEach((_, idx) => {
+      cancelledRef.current[idx] = true
+    })
+    setIsGeneratingAll(false)
+    setCurrentGeneratingIndex(null)
+    setPodDownloading(false)
+    setScenes([])
+    setLogline('')
+    setAssembledVideoUrl(null)
+    try {
+      const storageKey = `singing_studio_${projectId || 'default'}`
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        parsed.scenes = []
+        parsed.logline = ''
+        parsed.assembledVideoUrl = null
+        localStorage.setItem(storageKey, JSON.stringify(parsed))
+      }
+    } catch {
+      // ignore
+    }
+    toast.info('Storyboard cleared and dismissed.')
+  }
+
   // Cancel all active batch generations
   const handleCancelAll = () => {
     scenes.forEach((_, idx) => {
@@ -848,7 +921,7 @@ export default function SingingStudio({
                 {logline && <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.15rem 0 0' }}>{logline}</p>}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               {scenes.some((s) => s.status === 'generating') && (
                 <button
                   type="button"
@@ -870,6 +943,27 @@ export default function SingingStudio({
                   <span>⏹ Stop All</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={handleClearStoryboard}
+                style={{
+                  background: 'rgba(239,68,68,0.1)',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  color: '#fca5a5',
+                  borderRadius: '0.5rem',
+                  padding: '0.55rem 0.85rem',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                }}
+                title="Dismiss and clear the storyboard"
+              >
+                <span>🗑️ Dismiss / Clear Storyboard</span>
+              </button>
 
               <button
                 type="button"
@@ -988,6 +1082,25 @@ export default function SingingStudio({
                           }}
                         >
                           {sc.status === 'done' ? 'Re-render Part' : sc.status === 'error' ? '⚡ Retry Part' : '⚡ Render Part'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteScene(idx)}
+                          disabled={isGeneratingAll}
+                          style={{
+                            background: 'rgba(239,68,68,0.08)',
+                            border: '1px solid rgba(239,68,68,0.25)',
+                            color: '#f87171',
+                            borderRadius: '0.35rem',
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                          title="Delete this scene part"
+                        >
+                          🗑️
                         </button>
                       </>
                     )}
@@ -1183,6 +1296,30 @@ export default function SingingStudio({
                 )}
               </div>
             ))}
+
+            {/* Add Scene Part Button */}
+            <button
+              type="button"
+              onClick={handleAddScene}
+              disabled={isGeneratingAll}
+              style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px dashed #1a2840',
+                borderRadius: '0.6rem',
+                padding: '0.65rem',
+                color: '#94a3b8',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span>+ Add Scene Part</span>
+            </button>
           </div>
         </div>
       )}

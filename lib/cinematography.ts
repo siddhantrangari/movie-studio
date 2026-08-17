@@ -46,6 +46,24 @@ export const COLOR_PALETTES: Record<string, string> = {
 }
 
 /**
+ * Normalizes user-friendly mention tags like @picture1, @audio1, @singer, @guitarist
+ * into the required MiniMax/Hailuo multimodal tokens like <Picture 1>, <Audio 1>.
+ */
+export function normalizeReferenceTags(text: string): string {
+  if (!text) return ''
+  return text
+    // @picture1, @pic1, @image1, @img1 -> <Picture 1>
+    .replace(/@(?:picture|pic|image|img)\s*([1-9])/gi, '<Picture $1>')
+    // @audio1, @sound1, @voice1 -> <Audio 1>
+    .replace(/@(?:audio|sound|voice)\s*([1-9])/gi, '<Audio $1>')
+    // Common semantic roles
+    .replace(/@(?:performer|singer|lead|artist)\b/gi, '<Picture 1>')
+    .replace(/@(?:guitarist|costar|co-star|actor2|person2)\b/gi, '<Picture 2>')
+    .replace(/@(?:drummer|bassist|actor3|person3)\b/gi, '<Picture 3>')
+    .replace(/@(?:audio|track|song|vocals?|beat)\b/gi, '<Audio 1>')
+}
+
+/**
  * Assembles the final prompt: character appearance, then the action, then the
  * camera, lens, lighting, and grade direction. Order matters — LTX weights
  * earlier tokens more heavily, so identity leads and technique trails.
@@ -75,6 +93,8 @@ export function composePrompt(opts: {
   const color = opts.colorPalette ? (COLOR_PALETTES[opts.colorPalette] || opts.colorPalette) : undefined
   if (color && color !== 'Auto') parts.push(color)
 
-  return parts.filter(Boolean).join('. ').replace(/\.\s*\./g, '.')
+  const joined = parts.filter(Boolean).join('. ').replace(/\.\s*\./g, '.')
+  return normalizeReferenceTags(joined)
 }
+
 
