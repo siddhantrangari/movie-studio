@@ -57,7 +57,7 @@ export function normalizeReferenceTags(text: string): string {
     // @audio1, @sound1, @voice1 -> <Audio 1>
     .replace(/@(?:audio|sound|voice)\s*([1-9])/gi, '<Audio $1>')
     // Common semantic roles
-    .replace(/@(?:performer|singer|lead|artist)\b/gi, '<Picture 1>')
+    .replace(/@(?:performer|singer|lead|artist|hero|protagonist|character)\b/gi, '<Picture 1>')
     .replace(/@(?:guitarist|costar|co-star|actor2|person2)\b/gi, '<Picture 2>')
     .replace(/@(?:drummer|bassist|actor3|person3)\b/gi, '<Picture 3>')
     .replace(/@(?:audio|track|song|vocals?|beat)\b/gi, '<Audio 1>')

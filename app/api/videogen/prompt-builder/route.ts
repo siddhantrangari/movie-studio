@@ -17,7 +17,7 @@ CRITICAL PROMPT ENGINEERING RULES:
 3. Always tailor output to the requested type:
    - "scene": Deliver an ultra-rich single shot prompt (~100-160 words) + suggested camera move + suggested lighting + short title.
    - "character": Deliver a consistent character style sheet (character description, signature wardrobe textures, lighting profile, and exact image prompt for generating reference turnaround).
-   - "movie": Deliver a 3 to 5 shot cinematic storyboard sequence with continuity tags (@hero, @location), shot order, timecodes, camera moves, and individual scene prompts.
+   - "movie": Deliver a 3 to 5 shot cinematic storyboard sequence with continuity tags (@image1, @image2, or @CharacterName for referenced identities), shot order, timecodes, camera moves, and individual scene prompts.
 `
 
 export async function POST(req: NextRequest) {
