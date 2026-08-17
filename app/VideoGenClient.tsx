@@ -433,7 +433,12 @@ export default function VideoGenClient() {
       setJobs((prev) =>
         prev.map((j) => {
           if (j.id === jobId) {
-            return { ...j, filename: data.filename, label: `${j.label || 'Shot'} (✨ 4K Ultra HD)` }
+            return {
+              ...j,
+              filename: data.filename,
+              originalFilename: (j as any).originalFilename || j.filename,
+              label: `${j.label?.replace(/ \(✨ 4K Ultra HD\)/g, '') || 'Shot'} (✨ 4K Ultra HD)`,
+            }
           }
           return j
         })
