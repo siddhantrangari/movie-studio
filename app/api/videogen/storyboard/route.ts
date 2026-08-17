@@ -190,29 +190,34 @@ export async function PUT(req: NextRequest) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const body = (await req.json()) as Partial<Storyboard>
-  const now = Date.now()
-  const sb: Storyboard = {
-    id: body.id || newId(),
-    projectId: body.projectId || 'default-project',
-    title: body.title || 'Untitled movie',
-    model: body.model || 'ltx25',
-    referenceImages: body.referenceImages,
-    resolution: body.resolution ?? DEFAULT_RESOLUTION,
-    audioMode: body.audioMode ?? 'native',
-    voiceId: body.voiceId,
-    scenes: (body.scenes || []).map((s, idx) => ({
-      ...s,
-      id: s.id || `sc_${now}_${idx}`,
-      order: s.order || idx + 1,
-      prompt: (s.prompt || (s as { description?: string }).description || '').trim(),
-      seconds: s.seconds || 6,
-      state: s.state || 'idle',
-    })),
-    createdAt: body.createdAt ?? now,
-    updatedAt: now,
+  try {
+    const body = (await req.json()) as Partial<Storyboard>
+    const now = Date.now()
+    const sb: Storyboard = {
+      id: body.id || newId(),
+      projectId: body.projectId || 'default-project',
+      title: body.title || 'Untitled movie',
+      model: body.model || 'ltx25',
+      referenceImages: body.referenceImages,
+      resolution: body.resolution ?? DEFAULT_RESOLUTION,
+      audioMode: body.audioMode ?? 'native',
+      voiceId: body.voiceId,
+      scenes: (body.scenes || []).map((s, idx) => ({
+        ...s,
+        id: s.id || `sc_${now}_${idx}`,
+        order: s.order || idx + 1,
+        prompt: (s.prompt || (s as { description?: string }).description || '').trim(),
+        seconds: s.seconds || 6,
+        state: s.state || 'idle',
+      })),
+      createdAt: body.createdAt ?? now,
+      updatedAt: now,
+    }
+    return NextResponse.json({ success: true, storyboard: saveStoryboard(sb) })
+  } catch (err: any) {
+    console.error('[Storyboard PUT Error]', err)
+    return NextResponse.json({ error: err?.message || 'Failed to save storyboard' }, { status: 500 })
   }
-  return NextResponse.json({ success: true, storyboard: saveStoryboard(sb) })
 }
 
 export async function DELETE(req: NextRequest) {

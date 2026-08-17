@@ -281,7 +281,10 @@ export default function PromptBuilderDrawer({
           scenes,
         }),
       })
-      if (!saveRes.ok) throw new Error('Failed to save storyboard')
+      if (!saveRes.ok) {
+        const errJson = await saveRes.json().catch(() => ({}))
+        throw new Error(errJson.error || `Failed to save storyboard (HTTP ${saveRes.status})`)
+      }
 
       // Step 2: Queue all scenes on ComfyUI GPU
       setMovieGenState('queueing')

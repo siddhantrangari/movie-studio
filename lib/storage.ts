@@ -1,6 +1,7 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import fs from 'fs'
+import path from 'path'
 
 export function isR2Configured(): boolean {
   return Boolean(
@@ -73,6 +74,8 @@ export async function signedUrl(
   // Candidate paths to check in R2
   const candidateKeys = [
     filename,
+    `references/${projectId}/${filename}`,
+    `references/${filename}`,
     `films/${filename}`,
     `projects/${projectId}/${filename}`,
     `users/${userId}/projects/${projectId}/${filename}`,
@@ -111,32 +114,23 @@ export async function deleteFilmObject(key: string): Promise<void> {
   )
 }
 
-import path from 'path'
-
 export function getLocalClipPath(filename: string): string {
-  const dir = path.join(process.cwd(), 'data', 'films')
-  if (!fs.existsSync(dir)) {
-    try {
-      fs.mkdirSync(dir, { recursive: true })
-    } catch {
-      // directory exists or created
-    }
-  }
-  return path.join(dir, filename)
+  return path.join(process.cwd(), 'data', 'films', filename)
 }
 
 export function hasLocalClip(filename: string): boolean {
-  if (!filename) return false
-  const p = path.join(process.cwd(), 'data', 'films', filename)
+  const p = getLocalClipPath(filename)
   return fs.existsSync(p) && fs.statSync(p).size > 0
 }
 
 export async function persistClip(
   filename: string,
   buffer: Buffer,
-  options?: { userId?: string; projectId?: string }
+  options?: { projectId?: string }
 ): Promise<string> {
-  const localPath = getLocalClipPath(filename)
+  const localDir = path.join(process.cwd(), 'data', 'films')
+  if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true })
+  const localPath = path.join(localDir, filename)
   fs.writeFileSync(localPath, buffer)
   if (isR2Configured()) {
     const projectId = options?.projectId || 'default-project'
@@ -157,12 +151,13 @@ export async function putReferenceAsset(
   contentType = 'image/png'
 ): Promise<{ key: string; filename: string; url: string }> {
   const r2 = getR2Client()
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
   const localDir = path.join(process.cwd(), 'data', 'references')
   if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true })
-  const localPath = path.join(localDir, filename)
+  const localPath = path.join(localDir, safeName)
   fs.writeFileSync(localPath, buffer)
 
-  const key = `references/${projectId}/${filename}`
+  const key = `references/${projectId}/${safeName}`
   if (r2) {
     await r2.client.send(
       new PutObjectCommand({
@@ -173,8 +168,14 @@ export async function putReferenceAsset(
       })
     )
   }
-  const url = (await signedUrl(key, 86400 * 7)) || `/api/videogen/references/file?key=${encodeURIComponent(key)}`
-  return { key, filename, url }
+  let url = ''
+  if (r2) {
+    url = (await getSignedUrl(r2.client, new GetObjectCommand({ Bucket: r2.bucket, Key: key }), { expiresIn: 86400 * 7 }).catch(() => '')) || ''
+  }
+  if (!url) {
+    url = `/api/videogen/references/file?key=${encodeURIComponent(safeName)}`
+  }
+  return { key, filename: safeName, url }
 }
 
 export async function listReferenceAssets(
@@ -182,16 +183,60 @@ export async function listReferenceAssets(
 ): Promise<{ key: string; filename: string; url: string; createdAt: number }[]> {
   const r2 = getR2Client()
   const items: { key: string; filename: string; url: string; createdAt: number }[] = []
+  const seenKeys = new Set<string>()
 
-  // Check local references directory first
+  // 1. Query R2 bucket directly if configured
+  if (r2) {
+    try {
+      const res = await r2.client.send(
+        new ListObjectsV2Command({
+          Bucket: r2.bucket,
+          Prefix: `references/`,
+        })
+      )
+      for (const obj of res.Contents || []) {
+        if (!obj.Key || obj.Key.endsWith('/')) continue
+        const fname = path.basename(obj.Key)
+        try {
+          const url = await getSignedUrl(
+            r2.client,
+            new GetObjectCommand({ Bucket: r2.bucket, Key: obj.Key }),
+            { expiresIn: 86400 * 7 }
+          )
+          seenKeys.add(obj.Key)
+          seenKeys.add(fname)
+          items.push({
+            key: obj.Key,
+            filename: fname,
+            url,
+            createdAt: obj.LastModified ? obj.LastModified.getTime() : Date.now(),
+          })
+        } catch {
+          // ignore sign error
+        }
+      }
+    } catch (err) {
+      console.error('Error listing R2 reference assets:', err)
+    }
+  }
+
+  // 2. Check local data/references directory
   const localDir = path.join(process.cwd(), 'data', 'references')
   if (fs.existsSync(localDir)) {
     const files = fs.readdirSync(localDir)
     for (const f of files) {
       if (f.startsWith('.') || !/\.(png|jpe?g|webp|gif)$/i.test(f)) continue
+      if (seenKeys.has(f)) continue
+      seenKeys.add(f)
       const stat = fs.statSync(path.join(localDir, f))
       const key = `references/${projectId}/${f}`
-      const url = (await signedUrl(key, 86400 * 7)) || (await signedUrl(f, 86400 * 7)) || ''
+      let url = ''
+      if (r2) {
+        url = (await getSignedUrl(r2.client, new GetObjectCommand({ Bucket: r2.bucket, Key: key }), { expiresIn: 86400 * 7 }).catch(() => '')) || ''
+      }
+      if (!url) {
+        url = `/api/videogen/references/file?key=${encodeURIComponent(f)}`
+      }
       items.push({
         key,
         filename: f,
