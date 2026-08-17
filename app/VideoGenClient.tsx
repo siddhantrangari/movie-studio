@@ -672,6 +672,19 @@ export default function VideoGenClient() {
     setSubmitting(true)
     setGenError(null)
     const r = RESOLUTIONS[genRes] ?? RESOLUTIONS[0]
+
+    // Create optimistic temporary job immediately so the user sees progress and spinning card right away!
+    const tempId = `temp_${Date.now()}`
+    const tempJob: Job = {
+      id: tempId,
+      promptId: '',
+      label: opts.label || 'Custom Shot',
+      prompt: opts.prompt,
+      seconds: opts.seconds,
+      state: 'queued',
+      startedAt: Date.now(),
+    }
+    setJobs(prev => [tempJob, ...prev])
     
     try {
       const res = await fetch('/api/videogen/generate', {
@@ -696,34 +709,38 @@ export default function VideoGenClient() {
       try {
         data = JSON.parse(text)
       } catch {
-        if (text.includes('<html') || text.includes('502') || text.includes('Bad Gateway') || res.status === 502) {
-          throw new Error('GPU Pod is still initializing (booting ComfyUI & model weights). Please wait ~30-45 seconds and click Generate again.')
-        }
         throw new Error(`Server returned error (${res.status}): ${text.slice(0, 120)}`)
       }
       if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')
 
-      setJobs(prev => [{
-        id: `${data.promptId}`,
-        promptId: data.promptId,
-        label: opts.label,
-        prompt: opts.prompt,
-        seconds: opts.seconds,
-        state: 'queued' as const,
-        startedAt: Date.now(),
-      }, ...prev])
+      const realJobId = data.job?.id || data.promptId || tempId
+      const realPromptId = data.promptId || ''
+
+      setJobs(prev => prev.map(j => (j.id === tempId ? {
+        ...j,
+        id: realJobId,
+        promptId: realPromptId,
+        state: 'queued',
+      } : j)))
+
+      if (data.booting) {
+        toast.info(data.message || '🚀 GPU Node is starting up. Your shot is queued and will render automatically!')
+      } else {
+        toast.success('🎬 Shot queued on GPU!')
+      }
     } catch (e) {
       const msg = (e as Error).message
       setGenError(msg)
       toast.error(msg)
+      setJobs(prev => prev.filter(j => j.id !== tempId))
     } finally {
       setSubmitting(false)
     }
-  }, [genRes, selectedCharacterId, cameraMotion, colorPalette, lighting, selectedModel, activeProjectId, refImages])
+  }, [genRes, selectedCharacterId, cameraMotion, colorPalette, lighting, selectedModel, activeProjectId, refImages, toast])
 
   // Poll pending
   const pending = jobs.filter(j => j.state === 'queued' || j.state === 'running')
-  const pendingKey = pending.map(j => j.promptId).join(',')
+  const pendingKey = pending.map(j => j.promptId || j.id).filter(Boolean).join(',')
 
   useEffect(() => {
     if (!pendingKey) return
@@ -736,7 +753,7 @@ export default function VideoGenClient() {
         const data = await res.json()
         if (cancelled || !data.jobs) return
         setJobs(prev => prev.map(j => {
-          const u = data.jobs[j.promptId]
+          const u = data.jobs[j.promptId] || (j.id ? data.jobs[j.id] : undefined)
           return u ? { ...j, ...u } : j
         }))
       } catch {
@@ -745,7 +762,7 @@ export default function VideoGenClient() {
     }
 
     tick()
-    const iv = setInterval(tick, 4000)
+    const iv = setInterval(tick, 3000)
     return () => { cancelled = true; clearInterval(iv) }
   }, [pendingKey])
 
@@ -1688,11 +1705,11 @@ export default function VideoGenClient() {
                               borderTop: '3px solid var(--gold)',
                               animation: 'spin 1s linear infinite',
                             }} />
-                            <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 700, letterSpacing: '0.06em' }}>
-                              {j.state === 'queued' ? 'QUEUED' : 'RENDERING…'}
+                            <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 800, letterSpacing: '0.06em' }}>
+                              {j.state === 'queued' ? (j.promptId ? '⏱️ QUEUED IN GPU NODE' : '🚀 INITIALIZING GPU NODE…') : '⏳ RENDERING FRAME…'}
                             </span>
-                            <span style={{ fontSize: '10px', color: '#64748b' }}>
-                              {j.seconds || 4}s clip · {j.startedAt ? Math.round((Date.now() - j.startedAt) / 1000) : 0}s elapsed
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                              {j.state === 'queued' && !j.promptId ? 'Starting ComfyUI & model weights…' : `${j.seconds || 4}s clip · ${j.startedAt ? Math.round((Date.now() - j.startedAt) / 1000) : 0}s elapsed`}
                             </span>
                             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                           </div>

@@ -281,6 +281,9 @@ export type GenerationJob = {
   height?: number
   seconds?: number
   characterId?: string
+  model?: 'ltx25' | 'minimax'
+  referenceImages?: string[]
+  referenceImage?: string
 }
 
 export function getGenerationJobs(projectId?: string): GenerationJob[] {

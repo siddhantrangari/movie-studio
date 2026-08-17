@@ -22,13 +22,76 @@ export async function GET(req: NextRequest) {
   const explicitPodId = req.nextUrl.searchParams.get('podId')
   const requestedModel = req.nextUrl.searchParams.get('model') as 'ltx25' | 'minimax' | null
   const podId = explicitPodId || (requestedModel ? (await getRunningPodId(requestedModel)) : ((await getRunningPodId('minimax')) || (await getRunningPodId('ltx25'))))
+  
   if (!podId) {
-    return NextResponse.json({ error: 'Pod not running', jobs: {} }, { status: 409 })
+    // Return graceful 200 with booting flag so UI polling stays smooth
+    return NextResponse.json({ podId: null, booting: true, jobs: {} })
   }
+
+  const { getGenerationJobs, getCharacters, readCharacterImage } = await import('@/lib/studio')
+  const { buildWorkflow, submitPrompt, uploadImageToPod } = await import('@/lib/comfyui')
+  const { composePrompt } = await import('@/lib/cinematography')
+  const allJobs = getGenerationJobs('all')
 
   const entries = await Promise.all(
     ids.map(async (id) => {
-      const st = await getJobStatus(podId, id)
+      // Check if this is a queued job without a promptId that needs dispatching
+      const matchingJob = allJobs.find((j) => j.id === id || j.promptId === id)
+      if (matchingJob && (!matchingJob.promptId || matchingJob.state === 'queued') && !matchingJob.filename) {
+        if (!matchingJob.promptId) {
+          try {
+            const targetModel = matchingJob.model || 'ltx25'
+            const characters = getCharacters()
+            const char = matchingJob.characterId ? characters.find((c) => c.id === matchingJob.characterId) : undefined
+            let referenceImage: string | undefined
+            const uploadedRefs: string[] = []
+
+            if (char?.imageFile) {
+              const buf = readCharacterImage(char.imageFile)
+              if (buf) {
+                referenceImage = await uploadImageToPod(podId, buf, char.imageFile)
+              }
+            }
+
+            if (Array.isArray(matchingJob.referenceImages) && matchingJob.referenceImages.length > 0) {
+              for (let i = 0; i < matchingJob.referenceImages.length; i++) {
+                const img = matchingJob.referenceImages[i]
+                if (typeof img === 'string' && img.startsWith('data:image/')) {
+                  const matches = img.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+                  if (matches && matches[2]) {
+                    const ext = matches[1]?.includes('jpeg') ? 'jpg' : 'png'
+                    const buf = Buffer.from(matches[2], 'base64')
+                    const fname = `ref_${Date.now()}_${i}.${ext}`
+                    uploadedRefs.push(await uploadImageToPod(podId, buf, fname))
+                  }
+                }
+              }
+            }
+
+            const built = buildWorkflow({
+              model: targetModel,
+              prompt: composePrompt({ prompt: matchingJob.prompt, characterDescription: char?.description }),
+              seconds: matchingJob.seconds || 4,
+              width: matchingJob.width || (targetModel === 'minimax' ? 1280 : 704),
+              height: matchingJob.height || (targetModel === 'minimax' ? 720 : 384),
+              referenceImage,
+              referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
+            })
+
+            const { prompt_id } = await submitPrompt(podId, built.workflow)
+            matchingJob.promptId = prompt_id
+            matchingJob.state = 'running'
+            updateGenerationJob(id, { promptId: prompt_id, state: 'running' })
+            return [id, { state: 'running' as const, filename: undefined, subfolder: undefined, error: undefined }] as const
+          } catch (err: any) {
+            console.log('[Auto-Dispatch Status] Waiting for ComfyUI:', err?.message)
+            return [id, { state: 'queued' as const, filename: undefined, subfolder: undefined, error: undefined }] as const
+          }
+        }
+      }
+
+      const lookupId = matchingJob?.promptId || id
+      const st = await getJobStatus(podId, lookupId)
       if (st) {
         const updated = updateGenerationJob(id, {
           state: st.state as 'queued' | 'running' | 'done' | 'error',
