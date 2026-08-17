@@ -87,6 +87,8 @@ export type Storyboard = {
   id: string
   projectId?: string
   title: string
+  model?: 'ltx25' | 'minimax'
+  referenceImages?: string[]
   /** 0-based index into the shared RESOLUTIONS list. */
   resolution: number
   /** 'none' | 'native' | 'elevenlabs' | 'both' */

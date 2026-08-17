@@ -31,6 +31,9 @@ type Props = {
   onToggle: () => void
   onWideToggle?: (wide: boolean) => void
   initialType?: 'scene' | 'character' | 'movie'
+  selectedModel?: 'ltx25' | 'minimax'
+  refImages?: string[]
+  resolution?: number
   onApplyScene?: (data: { prompt: string; cameraMotion?: string; lighting?: string; colorPalette?: string }) => void
   onApplyCharacter?: (data: { name: string; description: string; turnaroundPrompt: string }) => void
   onApplyMovie?: (data: { title: string; shots: Array<{ order: number; title: string; seconds: number; prompt: string }> }) => void
@@ -44,6 +47,9 @@ export default function PromptBuilderDrawer({
   onToggle,
   onWideToggle,
   initialType = 'scene',
+  selectedModel = 'ltx25',
+  refImages = [],
+  resolution = 0,
   onApplyScene,
   onApplyCharacter,
   onApplyMovie,
@@ -269,6 +275,9 @@ export default function PromptBuilderDrawer({
         body: JSON.stringify({
           id: sbId,
           title: result.title || 'AI Director Master Film',
+          model: selectedModel,
+          referenceImages: refImages && refImages.length > 0 ? refImages : undefined,
+          resolution,
           scenes,
         }),
       })
@@ -281,7 +290,11 @@ export default function PromptBuilderDrawer({
       const queueRes = await fetch('/api/videogen/storyboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: sbId }),
+        body: JSON.stringify({
+          id: sbId,
+          model: selectedModel,
+          referenceImages: refImages && refImages.length > 0 ? refImages : undefined,
+        }),
       })
       const queueData = await queueRes.json()
       if (!queueRes.ok || queueData.error) {

@@ -78,6 +78,8 @@ export async function PUT(req: NextRequest) {
     id: body.id || newId(),
     projectId: body.projectId || 'default-project',
     title: body.title || 'Untitled movie',
+    model: body.model || 'ltx25',
+    referenceImages: body.referenceImages,
     resolution: body.resolution ?? DEFAULT_RESOLUTION,
     audioMode: body.audioMode ?? 'native',
     voiceId: body.voiceId,
@@ -107,20 +109,29 @@ export async function DELETE(req: NextRequest) {
 
 /**
  * POST — queue scenes for generation.
- * Body: { id, sceneIds?: string[] }  (omit sceneIds to render the whole board)
+ * Body: { id, sceneIds?: string[], model?: string, referenceImages?: string[] }
  */
 export async function POST(req: NextRequest) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id, sceneIds } = await req.json()
+  const { id, sceneIds, model: reqModel, referenceImages: reqRefs } = await req.json()
   const sb = getStoryboard(id)
   if (!sb) return NextResponse.json({ error: 'Storyboard not found' }, { status: 404 })
 
-  const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
+  let targetModel: 'ltx25' | 'minimax' = (reqModel || sb.model || 'ltx25') as 'ltx25' | 'minimax'
+  let podId = await getRunningPodId(targetModel)
+
   if (!podId) {
-    return NextResponse.json({ error: 'GPU Pod is offline. Please start the GPU node from the top banner first.' }, { status: 409 })
+    const otherModel: 'ltx25' | 'minimax' = targetModel === 'minimax' ? 'ltx25' : 'minimax'
+    const otherPodId = await getRunningPodId(otherModel)
+    if (otherPodId) {
+      targetModel = otherModel
+      podId = otherPodId
+    } else {
+      return NextResponse.json({ error: 'GPU Pod is offline. Please deploy or start the GPU node from Engines Hub.' }, { status: 409 })
+    }
   }
 
   const { RESOLUTIONS } = await import('@/lib/resolutions')
@@ -130,7 +141,7 @@ export async function POST(req: NextRequest) {
     ? sb.scenes.filter((s) => sceneIds.includes(s.id))
     : sb.scenes
 
-  // Reference images are shared across scenes; upload each only once.
+  const refList = (reqRefs && reqRefs.length > 0 ? reqRefs : (sb.referenceImages || []))
   const uploaded = new Map<string, string>()
 
   for (const scene of targets) {
@@ -153,11 +164,13 @@ export async function POST(req: NextRequest) {
 
       const composed = composeScenePrompt(scene, characters)
       const built = buildWorkflow({
+        model: targetModel,
         prompt: composed,
         seconds: scene.seconds || 6,
-        width: res.w,
-        height: res.h,
+        width: targetModel === 'minimax' ? (res.w >= 1280 ? res.w : 1280) : res.w,
+        height: targetModel === 'minimax' ? (res.h >= 720 ? res.h : 720) : res.h,
         referenceImage,
+        referenceImages: refList.length > 0 ? refList : undefined,
       })
 
       const { prompt_id } = await submitPrompt(podId, built.workflow)

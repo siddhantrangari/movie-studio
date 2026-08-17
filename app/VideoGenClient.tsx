@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { RESOLUTIONS } from '@/lib/resolutions'
 import PromptBuilderDrawer from './components/PromptBuilderDrawer'
@@ -216,6 +216,181 @@ export default function VideoGenClient() {
   const [copied, setCopied] = useState<string | null>(null)
   const [failedVideos, setFailedVideos] = useState<Record<string, boolean>>({})
   const [initialLoading, setInitialLoading] = useState(true)
+
+  // ── @ Mention Autocomplete State & Logic ──
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionMenuRef = useRef<HTMLDivElement>(null)
+  const [showMentionMenu, setShowMentionMenu] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionStartIndex, setMentionStartIndex] = useState<number>(-1)
+  const [selectedMentionIdx, setSelectedMentionIdx] = useState<number>(0)
+
+  // Compute all available mention options based on attached images and characters
+  const mentionItems = useMemo(() => {
+    const items: Array<{
+      id: string
+      tag: string
+      label: string
+      subtitle?: string
+      image?: string
+      icon?: string
+      category: 'Attached Images' | 'Project Characters' | 'Media & Roles'
+      character?: Character
+    }> = []
+
+    // 1. Attached references
+    refImages.forEach((img, idx) => {
+      items.push({
+        id: `ref_${idx}`,
+        tag: selectedModel === 'minimax' ? `@picture${idx + 1}` : `@image${idx + 1}`,
+        label: `Attached Image #${idx + 1}`,
+        subtitle: `Reference slot #${idx + 1}`,
+        image: img,
+        category: 'Attached Images',
+      })
+    })
+
+    // 2. Characters
+    characters.forEach((char) => {
+      const cleanName = char.name.replace(/[^\w]/g, '')
+      items.push({
+        id: `char_${char.id}`,
+        tag: `@${cleanName || char.name}`,
+        label: char.name,
+        subtitle: char.description?.slice(0, 50) || 'Character',
+        image: char.imageFile ? `/api/videogen/characters?file=${encodeURIComponent(char.imageFile)}` : undefined,
+        icon: '👤',
+        category: 'Project Characters',
+        character: char,
+      })
+    })
+
+    // 3. Audio & Quick visual slots
+    if (refImages.length === 0) {
+      items.push({
+        id: 'slot_pic1',
+        tag: selectedModel === 'minimax' ? '@picture1' : '@image1',
+        label: 'Image Reference 1',
+        subtitle: 'Primary visual subject',
+        icon: '🖼️',
+        category: 'Media & Roles',
+      })
+    }
+
+    items.push({
+      id: 'slot_audio1',
+      tag: '@audio1',
+      label: 'Audio Reference Track',
+      subtitle: 'Singing vocals & lip-sync',
+      icon: '🎵',
+      category: 'Media & Roles',
+    })
+
+    items.push({
+      id: 'slot_performer',
+      tag: '@performer',
+      label: 'Lead Performer',
+      subtitle: 'Main actor / singer',
+      icon: '🎤',
+      category: 'Media & Roles',
+    })
+
+    if (!mentionQuery.trim()) return items
+
+    const q = mentionQuery.toLowerCase()
+    return items.filter(
+      (item) =>
+        item.tag.toLowerCase().includes(q) ||
+        item.label.toLowerCase().includes(q) ||
+        (item.subtitle && item.subtitle.toLowerCase().includes(q))
+    )
+  }, [refImages, characters, selectedModel, mentionQuery])
+
+  // Handle textarea text changes and detect @ triggers
+  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value
+    const cursor = e.target.selectionStart || 0
+    setGenPrompt(val)
+
+    // Check if cursor is immediately following an @ or @query
+    const textBeforeCursor = val.slice(0, cursor)
+    const atMatch = textBeforeCursor.match(/@([\w-]*)$/)
+    if (atMatch) {
+      setMentionQuery(atMatch[1])
+      setMentionStartIndex(cursor - atMatch[0].length)
+      setShowMentionMenu(true)
+      setSelectedMentionIdx(0)
+    } else {
+      setShowMentionMenu(false)
+    }
+  }
+
+  // Insert selected mention tag into prompt
+  const insertMention = (item: (typeof mentionItems)[0]) => {
+    const textarea = promptTextareaRef.current
+    const cursor = textarea?.selectionStart ?? genPrompt.length
+    const startPos = mentionStartIndex >= 0 ? mentionStartIndex : cursor
+    const textBefore = genPrompt.slice(0, startPos)
+    const textAfter = genPrompt.slice(cursor)
+    const newText = `${textBefore}${item.tag} ${textAfter}`
+    setGenPrompt(newText)
+    setShowMentionMenu(false)
+
+    // If character was selected and has an image, auto-attach to references if not already there
+    if (item.character?.imageFile && refImages.length < maxRefImages) {
+      const charImgUrl = `/api/videogen/characters?file=${encodeURIComponent(item.character.imageFile)}`
+      if (!refImages.includes(charImgUrl)) {
+        setRefImages((prev) => [...prev, charImgUrl])
+        toast.success(`Attached ${item.character.name}'s reference portrait to slot #${refImages.length + 1}`)
+      }
+    }
+
+    // Set cursor position after the inserted tag
+    setTimeout(() => {
+      if (textarea) {
+        const newCursorPos = (textBefore + item.tag + ' ').length
+        textarea.focus()
+        textarea.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 10)
+  }
+
+  // Handle keyboard navigation in mention menu
+  const handlePromptKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!showMentionMenu || mentionItems.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedMentionIdx((prev) => (prev + 1) % mentionItems.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedMentionIdx((prev) => (prev - 1 + mentionItems.length) % mentionItems.length)
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      const selected = mentionItems[selectedMentionIdx]
+      if (selected) {
+        insertMention(selected)
+      }
+    } else if (e.key === 'Escape') {
+      setShowMentionMenu(false)
+    }
+  }
+
+  // Close mention menu on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        mentionMenuRef.current &&
+        !mentionMenuRef.current.contains(e.target as Node) &&
+        promptTextareaRef.current &&
+        !promptTextareaRef.current.contains(e.target as Node)
+      ) {
+        setShowMentionMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
 
   // Navigation & Drawer states
   const [leftNavCollapsed, setLeftNavCollapsed] = useState(false)
@@ -457,7 +632,16 @@ export default function VideoGenClient() {
           referenceImages: refImages.length > 0 ? refImages : undefined,
         }),
       })
-      const data = await res.json()
+      const text = await res.text()
+      let data: any = {}
+      try {
+        data = JSON.parse(text)
+      } catch {
+        if (text.includes('<html') || text.includes('502') || text.includes('Bad Gateway') || res.status === 502) {
+          throw new Error('GPU Pod is still initializing (booting ComfyUI & model weights). Please wait ~30-45 seconds and click Generate again.')
+        }
+        throw new Error(`Server returned error (${res.status}): ${text.slice(0, 120)}`)
+      }
       if (!res.ok || data.error) throw new Error(data.error || 'Generation failed')
 
       setJobs(prev => [{
@@ -883,10 +1067,41 @@ export default function VideoGenClient() {
                 }}>
                   BRING YOUR STORIES TO LIFE
                 </h2>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', opacity: 0.6 }}>
-                  <span style={{ fontSize: '11px', background: '#121F35', padding: '0.2rem 0.6rem', borderRadius: '0.25rem' }}>Zephyr</span>
-                  <span style={{ fontSize: '11px', background: '#121F35', padding: '0.2rem 0.6rem', borderRadius: '0.25rem' }}>Cully Hill Boys</span>
-                  <span style={{ fontSize: '11px', background: '#121F35', padding: '0.2rem 0.6rem', borderRadius: '0.25rem' }}>Hell Grind</span>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {characters.length > 0 ? (
+                    characters.slice(0, 5).map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          const clean = c.name.replace(/[^\w]/g, '')
+                          setGenPrompt(prev => prev ? `${prev.trim()} @${clean} ` : `@${clean} `)
+                          toast.info(`Added @${clean} to prompt`)
+                        }}
+                        style={{
+                          background: '#121F35',
+                          border: '1px solid #1e3a5f',
+                          color: '#93c5fd',
+                          fontSize: '11px',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '0.25rem',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                        }}
+                      >
+                        <span>👤 @{c.name}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <>
+                      <span style={{ fontSize: '11px', background: '#121F35', padding: '0.2rem 0.6rem', borderRadius: '0.25rem', color: '#94a3b8' }}>Zephyr</span>
+                      <span style={{ fontSize: '11px', background: '#121F35', padding: '0.2rem 0.6rem', borderRadius: '0.25rem', color: '#94a3b8' }}>Cully Hill Boys</span>
+                      <span style={{ fontSize: '11px', background: '#121F35', padding: '0.2rem 0.6rem', borderRadius: '0.25rem', color: '#94a3b8' }}>Hell Grind</span>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1024,16 +1239,122 @@ export default function VideoGenClient() {
 
                 {/* Prompt input */}
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'stretch' }}>
-                  <textarea
-                    value={genPrompt}
-                    onChange={e => setGenPrompt(e.target.value)}
-                    placeholder="Describe your scene — use @ to add characters & locations..."
-                    style={{
-                      flex: 1, height: '90px', background: '#070c14', border: '1px solid #1a2840',
-                      borderRadius: '0.75rem', padding: '0.85rem', color: '#F2F5FA', fontSize: '13px',
-                      outline: 'none', resize: 'none', fontFamily: 'inherit'
-                    }}
-                  />
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <textarea
+                      ref={promptTextareaRef}
+                      value={genPrompt}
+                      onChange={handlePromptChange}
+                      onKeyDown={handlePromptKeyDown}
+                      placeholder="Describe your scene — type @ to reference attached images, characters, or audio..."
+                      style={{
+                        width: '100%', height: '90px', background: '#070c14', border: '1px solid #1a2840',
+                        borderRadius: '0.75rem', padding: '0.85rem', color: '#F2F5FA', fontSize: '13px',
+                        outline: 'none', resize: 'none', fontFamily: 'inherit'
+                      }}
+                    />
+
+                    {/* @ Mention Autocomplete Popover */}
+                    {showMentionMenu && mentionItems.length > 0 && (
+                      <div
+                        ref={mentionMenuRef}
+                        style={{
+                          position: 'absolute',
+                          bottom: '100%',
+                          left: 0,
+                          marginBottom: '0.4rem',
+                          width: 'min(440px, 100%)',
+                          maxHeight: '260px',
+                          overflowY: 'auto',
+                          background: '#070d18',
+                          border: '1px solid #223554',
+                          borderRadius: '0.75rem',
+                          boxShadow: '0 12px 30px rgba(0,0,0,0.8), 0 0 16px rgba(232,185,74,0.18)',
+                          backdropFilter: 'blur(20px)',
+                          zIndex: 60,
+                          padding: '0.4rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.25rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0.5rem 0.25rem', borderBottom: '1px solid #142033' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            ✨ Insert Reference Mention
+                          </span>
+                          <span style={{ fontSize: '9.5px', color: '#64748b' }}>
+                            ↑↓ to navigate · ↵ / Tab to select
+                          </span>
+                        </div>
+
+                        {mentionItems.map((item, idx) => {
+                          const isSelected = idx === selectedMentionIdx
+                          return (
+                            <div
+                              key={item.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                insertMention(item)
+                              }}
+                              onMouseEnter={() => setSelectedMentionIdx(idx)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.65rem',
+                                padding: '0.45rem 0.6rem',
+                                borderRadius: '0.5rem',
+                                background: isSelected ? 'rgba(232,185,74,0.14)' : 'transparent',
+                                border: `1px solid ${isSelected ? 'rgba(232,185,74,0.35)' : 'transparent'}`,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {/* Thumbnail / Icon */}
+                              {item.image ? (
+                                <div style={{ width: '32px', height: '32px', borderRadius: '0.35rem', overflow: 'hidden', border: '1px solid rgba(232,185,74,0.4)', flexShrink: 0, background: '#000' }}>
+                                  <img src={item.image} alt={item.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                </div>
+                              ) : (
+                                <div style={{ width: '32px', height: '32px', borderRadius: '0.35rem', background: '#0e182e', border: '1px solid #1a2840', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>
+                                  {item.icon || '🏷️'}
+                                </div>
+                              )}
+
+                              {/* Label & Details */}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <span style={{ fontSize: '12px', fontWeight: 800, color: isSelected ? 'var(--gold)' : '#F2F5FA' }}>
+                                    {item.tag}
+                                  </span>
+                                  <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>
+                                    · {item.label}
+                                  </span>
+                                </div>
+                                {item.subtitle && (
+                                  <p style={{ fontSize: '10px', color: '#64748b', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {item.subtitle}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Category Badge */}
+                              <span style={{
+                                fontSize: '9px',
+                                background: item.category === 'Attached Images' ? 'rgba(232,185,74,0.18)' : item.category === 'Project Characters' ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.06)',
+                                color: item.category === 'Attached Images' ? 'var(--gold)' : item.category === 'Project Characters' ? '#93c5fd' : '#94a3b8',
+                                padding: '0.15rem 0.4rem',
+                                borderRadius: '0.25rem',
+                                fontWeight: 700,
+                                flexShrink: 0,
+                              }}>
+                                {item.category === 'Attached Images' ? 'ATTACHED' : item.category === 'Project Characters' ? 'CHARACTER' : 'TAG'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   <button
                     onClick={() => generate({ prompt: genPrompt, label: 'Custom Shot', seconds: genSeconds })}
                     disabled={submitting || !genPrompt.trim()}
@@ -1096,14 +1417,26 @@ export default function VideoGenClient() {
 
                   <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
                     {refImages.map((img, idx) => (
-                      <div key={idx} style={{ position: 'relative', width: '56px', height: '56px', borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid rgba(232,185,74,0.4)', background: '#030712' }}>
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          const tag = selectedModel === 'minimax' ? `@picture${idx + 1}` : `@image${idx + 1}`
+                          setGenPrompt(prev => prev ? `${prev.trim()} ${tag} ` : `${tag} `)
+                          toast.info(`Added ${tag} to prompt`)
+                        }}
+                        style={{ position: 'relative', width: '56px', height: '56px', borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid rgba(232,185,74,0.4)', background: '#030712', cursor: 'pointer' }}
+                        title={`Click to insert ${selectedModel === 'minimax' ? `@picture${idx + 1}` : `@image${idx + 1}`} into prompt`}
+                      >
                         <img src={img} alt={`ref-${idx}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <span style={{ position: 'absolute', bottom: '2px', left: '2px', background: 'rgba(0,0,0,0.7)', fontSize: '8px', color: '#e2e8f0', padding: '0 3px', borderRadius: '2px', fontWeight: 700 }}>
-                          #{idx + 1}
+                        <span style={{ position: 'absolute', bottom: '2px', left: '2px', background: 'rgba(0,0,0,0.75)', fontSize: '8px', color: 'var(--gold)', padding: '0 3px', borderRadius: '2px', fontWeight: 800 }}>
+                          {selectedModel === 'minimax' ? `@pic${idx + 1}` : `@img${idx + 1}`}
                         </span>
                         <button
                           type="button"
-                          onClick={() => setRefImages(prev => prev.filter((_, i) => i !== idx))}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRefImages(prev => prev.filter((_, i) => i !== idx))
+                          }}
                           style={{ position: 'absolute', top: '2px', right: '2px', width: '16px', height: '16px', borderRadius: '50%', background: 'rgba(239,68,68,0.85)', color: '#fff', border: 'none', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
                         >
                           ✕
@@ -2414,6 +2747,9 @@ export default function VideoGenClient() {
         onToggle={() => setShowPromptBuilder(!showPromptBuilder)}
         onWideToggle={setPromptBuilderIsWide}
         initialType={promptBuilderType}
+        selectedModel={selectedModel}
+        refImages={refImages}
+        resolution={genRes}
         onApplyScene={(data) => {
           setGenPrompt(data.prompt)
           if (data.cameraMotion) setCameraMotion(data.cameraMotion)
