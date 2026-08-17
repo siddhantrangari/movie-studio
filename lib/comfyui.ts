@@ -90,17 +90,9 @@ export function buildMiniMaxWorkflow(p: GenParams) {
   // to stay strictly within the optimal 32k-36k token budget (5-6 min instead of 50 min!).
   // Node 8a (ImageScale Lanczos) then super-resolves to target 720p/1080p/4K on GPU in <1 second.
   const isWidescreen = targetWidth >= targetHeight
-  const isLongClip = (p.seconds ?? 5) > 6
-  let baseWidth = 1280
-  let baseHeight = 720
-
-  if (isWidescreen) {
-    baseWidth = isLongClip ? 864 : (targetWidth >= 1920 ? 1280 : targetWidth)
-    baseHeight = isLongClip ? 480 : (targetHeight >= 1080 ? 720 : targetHeight)
-  } else {
-    baseWidth = isLongClip ? 480 : (targetHeight >= 1920 ? 720 : targetWidth)
-    baseHeight = isLongClip ? 864 : (targetWidth >= 1080 ? 1280 : targetHeight)
-  }
+  // Native HD 720p diffusion (1280x720 for 16:9 / 720x1280 for 9:16) for crisp full-screen clarity
+  const baseWidth = isWidescreen ? Math.max(1280, targetWidth) : Math.min(720, targetWidth)
+  const baseHeight = isWidescreen ? Math.min(720, targetHeight) : Math.max(1280, targetHeight)
 
   const wf: Record<string, unknown> = {
     // ── Model loading ──────────────────────────────────────────────────────────
