@@ -51,6 +51,42 @@ export function getPodVram(pod: PodData | Record<string, unknown> | null | undef
   return 24
 }
 
+function compressImageForUpload(file: File, maxDim = 1280, quality = 0.88): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width
+        let h = img.height
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w)
+            w = maxDim
+          } else {
+            w = Math.round((w * maxDim) / h)
+            h = maxDim
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h)
+          resolve(canvas.toDataURL('image/jpeg', quality))
+        } else {
+          resolve((e.target?.result as string) || '')
+        }
+      }
+      img.onerror = () => resolve((e.target?.result as string) || '')
+      img.src = (e.target?.result as string) || ''
+    }
+    reader.onerror = () => resolve('')
+    reader.readAsDataURL(file)
+  })
+}
+
 type Project = {
   id: string
   name: string
@@ -1491,11 +1527,10 @@ export default function VideoGenClient() {
                             if (!files) return
                             const remaining = maxRefImages - refImages.length
                             const toAdd = Array.from(files).slice(0, remaining)
-                            toAdd.forEach(file => {
-                              const reader = new FileReader()
-                              reader.onload = async (ev) => {
-                                if (ev.target?.result) {
-                                  const base64 = ev.target.result as string
+                            toAdd.forEach(async (file) => {
+                              try {
+                                const base64 = await compressImageForUpload(file, 1280, 0.88)
+                                if (base64) {
                                   setRefImages(prev => prev.length < maxRefImages ? [...prev, base64] : prev)
                                   // Auto-save permanently to Cloudflare R2 reference media gallery
                                   try {
@@ -1515,8 +1550,9 @@ export default function VideoGenClient() {
                                     console.error('Error auto-saving reference to R2:', err)
                                   }
                                 }
+                              } catch (err) {
+                                console.error('Error processing reference upload:', err)
                               }
-                              reader.readAsDataURL(file)
                             })
                             e.target.value = ''
                           }}
