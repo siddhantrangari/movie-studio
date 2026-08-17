@@ -37,8 +37,9 @@ export async function POST(req: NextRequest) {
       genre = 'Pop',
       mood = 'Energetic',
       lyricsTheme = 'High energy performance',
-      stylePreset = 'Cyberpunk Neon Concert',
+      stylePreset = '🌿 Match Attached Photo Environment & Scene (Default)',
       performerDesc = 'Charismatic singer',
+      performerImageUrl = '',
       songDuration = 45,
       segmentDuration = 15,
       // For regenerate_scene:
@@ -47,12 +48,15 @@ export async function POST(req: NextRequest) {
       revisionNotes = '',
     } = await req.json()
 
+    const isMatchPhotoEnvironment = !stylePreset || stylePreset.includes('Match Attached Photo')
+
     if (action === 'regenerate_scene') {
       const userPrompt = `You are directing Scene #${sceneIndex + 1} of a music video for "${songTitle}" (${genre}, ${mood}).
 Performer Identity: <Picture 1> (${performerDesc})
 Song Audio Track: <Audio 1>
 Style Aesthetic: ${stylePreset}
 Lyrics / Scene Beat: ${lyricsTheme}
+${isMatchPhotoEnvironment ? 'CRITICAL ENVIRONMENT RULE: Analyze the background and location in <Picture 1> (e.g. forest, room, outdoor nature, vintage stage) and set the scene in that EXACT same environment and lighting from the photo.' : `Place the singer from <Picture 1> in a ${stylePreset} setting.`}
 
 Current Scene Prompt to Replace:
 "${currentPrompt}"
@@ -68,6 +72,11 @@ Respond ONLY with valid JSON in this exact structure:
   "prompt": "Full MiniMax Ref2VA prompt containing <Picture 1> and <Audio 1>"
 }`
 
+      const userContent: any[] = [{ type: 'text', text: userPrompt }]
+      if (performerImageUrl && typeof performerImageUrl === 'string' && (performerImageUrl.startsWith('http') || performerImageUrl.startsWith('data:image/'))) {
+        userContent.push({ type: 'image_url', image_url: { url: performerImageUrl } })
+      }
+
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -78,7 +87,7 @@ Respond ONLY with valid JSON in this exact structure:
           model,
           messages: [
             { role: 'system', content: MUSIC_VIDEO_DIRECTOR_PROMPT },
-            { role: 'user', content: userPrompt },
+            { role: 'user', content: userContent },
           ],
           response_format: { type: 'json_object' },
         }),
@@ -119,13 +128,15 @@ Visual Style: ${stylePreset}
 Performer Description: ${performerDesc}
 Total Song Length: ${songDuration}s
 
+${isMatchPhotoEnvironment ? 'CRITICAL ENVIRONMENT INSTRUCTION: Carefully inspect the attached photo <Picture 1>. Identify the performer AND the exact location, scene background, props, and lighting shown in the image (e.g. misty pine forest, vintage rehearsal studio, outdoor landscape, etc.). Generate all scene prompts set directly in that EXACT location from <Picture 1>, maintaining background and wardrobe continuity throughout the music video.' : `Place the performer from <Picture 1> in a ${stylePreset} environment.`}
+
 Scene Breakdown Schedule:
 ${sceneRanges.map((s, idx) => `Part ${idx + 1}: ${s.start.toFixed(1)}s to ${s.end.toFixed(1)}s (${s.duration.toFixed(1)}s) — Role: ${s.label}`).join('\n')}
 
 MANDATORY RULES:
-1. Every shot's "prompt" field MUST include "<Picture 1>" (the singer) and "<Audio 1>" (the song vocal track).
+1. Every shot's "prompt" field MUST explicitly include "<Picture 1>" (the singer) and "<Audio 1>" (the song vocal track).
 2. Prioritize close-ups, medium close-ups, and smooth camera dollies/arcs to maximize facial lip-sync clarity.
-3. Keep visual lighting and wardrobe consistent across shots to ensure the music video feels cohesive.
+3. Keep visual lighting, background environment, and wardrobe consistent across shots to ensure the music video feels cohesive.
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -146,6 +157,11 @@ Respond ONLY with valid JSON in this exact structure:
   ]
 }`
 
+    const userContent: any[] = [{ type: 'text', text: userPrompt }]
+    if (performerImageUrl && typeof performerImageUrl === 'string' && (performerImageUrl.startsWith('http') || performerImageUrl.startsWith('data:image/'))) {
+      userContent.push({ type: 'image_url', image_url: { url: performerImageUrl } })
+    }
+
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -156,7 +172,7 @@ Respond ONLY with valid JSON in this exact structure:
         model,
         messages: [
           { role: 'system', content: MUSIC_VIDEO_DIRECTOR_PROMPT },
-          { role: 'user', content: userPrompt },
+          { role: 'user', content: userContent },
         ],
         response_format: { type: 'json_object' },
       }),

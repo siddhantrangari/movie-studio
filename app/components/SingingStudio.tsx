@@ -37,14 +37,15 @@ interface SingingStudioProps {
 }
 
 const STYLE_PRESETS = [
-  'Cyberpunk Neon Concert',
-  'Cinematic Retro 70s Soul',
-  'K-Pop Hologram Arena',
-  'Sunset Acoustic Beach Stage',
-  'Dark Fantasy Opera Cathedral',
-  'Anime Idol Holographic Stage',
-  'Neon Noir Jazz Club',
-  'Hyper-Realistic Studio Session',
+  '🌿 Match Attached Photo Environment & Scene (Default)',
+  '🌲 Forest & Atmospheric Nature Setting',
+  '🎤 Intimate Acoustic Studio & Vintage Mic',
+  '🌃 Cyberpunk Neon Concert',
+  '🌇 Sunset Acoustic Beach / Golden Hour',
+  '🏛️ Dark Fantasy Cathedral / Atmospheric Hall',
+  '🎷 Neon Noir Jazz Club',
+  '✨ Modern Arena & Concert Beams',
+  '🎬 Custom Director Setting',
 ]
 
 export default function SingingStudio({
@@ -59,7 +60,7 @@ export default function SingingStudio({
   const [songTitle, setSongTitle] = useState('Electric Horizon')
   const [genre, setGenre] = useState('Synthwave / Pop')
   const [mood, setMood] = useState('Energetic & Uplifting')
-  const [lyricsTheme, setLyricsTheme] = useState('Chasing dreams under neon city lights')
+  const [lyricsTheme, setLyricsTheme] = useState('Singing passionately in natural surroundings')
   const [stylePreset, setStylePreset] = useState(STYLE_PRESETS[0])
   const [performerDesc, setPerformerDesc] = useState('Charismatic lead singer with expressive eyes')
   const [selectedPerformerUrl, setSelectedPerformerUrl] = useState<string>('')
@@ -231,6 +232,7 @@ export default function SingingStudio({
           lyricsTheme,
           stylePreset,
           performerDesc,
+          performerImageUrl: selectedPerformerUrl || undefined,
           songDuration,
           segmentDuration,
         }),
@@ -272,6 +274,7 @@ export default function SingingStudio({
           lyricsTheme,
           stylePreset,
           performerDesc,
+          performerImageUrl: selectedPerformerUrl || undefined,
           sceneIndex: index,
           currentPrompt: targetScene.prompt,
           revisionNotes: revisionNotes[index] || '',
