@@ -480,3 +480,27 @@ async function assemble(sb: Storyboard, podId: string, captions: CaptionStyle, f
 export function filmsDiskUsage(): number {
   return readFilms().reduce((n, f) => n + (f.bytes ?? 0), 0)
 }
+
+/**
+ * Extracts the exact last frame of an MP4 video clip as a PNG Buffer.
+ * Used for Last-to-First frame chaining across storyboard shots.
+ */
+export async function extractLastFrame(videoPath: string): Promise<Buffer | null> {
+  if (!fs.existsSync(videoPath) || fs.statSync(videoPath).size === 0) return null
+  const tempOut = path.join(process.cwd(), 'data', `last_frame_${Date.now()}_${Math.random().toString(36).slice(2)}.png`)
+  try {
+    execSync(`ffmpeg -y -sseof -0.1 -i "${videoPath}" -update 1 -q:v 1 -frames:v 1 "${tempOut}"`, {
+      stdio: 'pipe',
+      timeout: 10000,
+    })
+    if (fs.existsSync(tempOut) && fs.statSync(tempOut).size > 0) {
+      const buf = fs.readFileSync(tempOut)
+      try { fs.unlinkSync(tempOut) } catch {}
+      return buf
+    }
+  } catch (err) {
+    console.error('[extractLastFrame] Failed to extract last frame:', err)
+  }
+  return null
+}
+

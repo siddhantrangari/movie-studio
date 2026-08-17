@@ -53,6 +53,8 @@ export type GenParams = {
   seconds?: number
   fps?: number
   seed?: number
+  /** Explicit initial starting frame (e.g. last frame from previous shot for Last-to-First chaining) */
+  startFrame?: string
   /** Single reference image (ComfyUI filename) */
   referenceImage?: string
   /** Multi-reference images (ComfyUI filenames) - up to 9 for MiniMax, up to 5 for LTX */
@@ -264,19 +266,18 @@ export function buildWorkflow(p: GenParams) {
     },
   }
 
-  const refList = (p.referenceImages && p.referenceImages.length > 0 ? p.referenceImages : (p.referenceImage ? [p.referenceImage] : [])).slice(0, 5)
-  if (refList.length > 0) {
-    // Image-to-video: reference images seed character and scene consistency
-    refList.forEach((img, idx) => {
-      wf[`7a_${idx}`] = { class_type: 'LoadImage', inputs: { image: img } }
-    })
+  const initialFrame = p.startFrame || (p.referenceImage ? p.referenceImage : undefined)
+
+  if (initialFrame) {
+    // Image-to-video: initial frame seeds continuous action/camera from previous shot (Last-to-First)
+    wf['7a'] = { class_type: 'LoadImage', inputs: { image: initialFrame } }
     wf['7'] = {
       class_type: 'LTXVImgToVideo',
       inputs: {
         positive: ['10', 0],
         negative: ['10', 1],
         vae: ['3', 0],
-        image: ['7a_0', 0],
+        image: ['7a', 0],
         width,
         height,
         length,
@@ -293,6 +294,7 @@ export function buildWorkflow(p: GenParams) {
       inputs: { model: ['11', 0], positive: ['7', 0], negative: ['7', 1], cfg: 1.0 },
     }
   } else {
+    // Pure text-to-video: generates natural cinematic actions, dynamic camera, and characters without freezing starting face
     wf['7'] = {
       class_type: 'EmptyLTXVLatentVideo',
       inputs: { width, height, length, batch_size: 1 },

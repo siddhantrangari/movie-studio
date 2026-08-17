@@ -34,8 +34,52 @@ export async function GET(req: NextRequest) {
       let uploadedRefs: string[] | null = null
 
       // Check if any scenes are waiting to be submitted
-      for (const scene of sb.scenes || []) {
+      const scenes = sb.scenes || []
+      const { extractLastFrame } = await import('@/lib/assemble')
+      const { getLocalClipPath } = await import('@/lib/storage')
+      const { fetchVideo } = await import('@/lib/comfyui')
+      const fs = await import('fs')
+
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i]
         if (scene.state === 'queued' && !scene.promptId) {
+          // If this is Shot N (where N > 1), wait for previous shot to finish so we can chain last-to-first frame
+          let startFrame: string | undefined
+          if (i > 0) {
+            const prevScene = scenes[i - 1]
+            if (prevScene.state !== 'done') {
+              // Wait for previous shot to finish rendering before dispatching this shot
+              break
+            }
+
+            // Extract last frame of previous shot for seamless visual & camera continuity
+            if (prevScene.filename) {
+              try {
+                let prevClipPath = getLocalClipPath(prevScene.filename)
+                if (!fs.existsSync(prevClipPath) || fs.statSync(prevClipPath).size === 0) {
+                  // Fetch from pod if not on local disk
+                  const podRes = await fetchVideo(podId, prevScene.filename, prevScene.subfolder || 'gen')
+                  if (podRes.ok && podRes.body) {
+                    const buf = Buffer.from(await podRes.arrayBuffer())
+                    const { persistClip } = await import('@/lib/storage')
+                    prevClipPath = await persistClip(prevScene.filename, buf, { projectId: sb.projectId })
+                  }
+                }
+
+                if (fs.existsSync(prevClipPath) && fs.statSync(prevClipPath).size > 0) {
+                  const lastFrameBuf = await extractLastFrame(prevClipPath)
+                  if (lastFrameBuf && lastFrameBuf.length > 0) {
+                    const fname = `last_frame_${sb.id}_scene_${i}_${Date.now()}.png`
+                    startFrame = await uploadImageToPod(podId, lastFrameBuf, fname)
+                    console.log(`[Last-to-First Chaining] Extracted last frame of Scene #${i} -> Seeding as first frame for Scene #${i + 1} (${startFrame})`)
+                  }
+                }
+              } catch (err: any) {
+                console.error('[Last-to-First Chaining Error]', err?.message)
+              }
+            }
+          }
+
           try {
             if (!uploadedRefs) {
               uploadedRefs = []
@@ -63,6 +107,7 @@ export async function GET(req: NextRequest) {
               seconds: scene.seconds || 6,
               width: targetModel === 'minimax' ? (res.w >= 1280 ? res.w : 1280) : res.w,
               height: targetModel === 'minimax' ? (res.h >= 720 ? res.h : 720) : res.h,
+              startFrame,
               referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
             })
 
@@ -71,8 +116,8 @@ export async function GET(req: NextRequest) {
             scene.state = 'queued'
             changed = true
           } catch (err: any) {
-            // ComfyUI may still be warming up
             console.log('[Storyboard Auto-Dispatch] Waiting for ComfyUI to accept jobs:', err.message)
+            break
           }
         }
       }
@@ -277,43 +322,47 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  for (const scene of targets) {
-    try {
-      scene.prompt = (scene.prompt || (scene as { description?: string }).description || '').trim()
-      if (!scene.prompt) {
-        throw new Error('Scene prompt is empty')
-      }
+  for (let i = 0; i < targets.length; i++) {
+    const scene = targets[i]
+    scene.prompt = (scene.prompt || (scene as { description?: string }).description || '').trim()
+    scene.state = 'queued'
+    scene.error = undefined
+    scene.filename = undefined
+    scene.promptId = undefined
 
-      let referenceImage: string | undefined
-      const char = scene.characterId ? characters.find((c) => c.id === scene.characterId) : undefined
+    // Only dispatch Shot 1 immediately; Shots 2+ will be automatically dispatched
+    // with Last-to-First frame chaining as each preceding shot finishes rendering.
+    if (i === 0) {
+      try {
+        let referenceImage: string | undefined
+        const char = scene.characterId ? characters.find((c) => c.id === scene.characterId) : undefined
 
-      if (char?.imageFile) {
-        if (!uploaded.has(char.imageFile)) {
-          const buf = readCharacterImage(char.imageFile)
-          if (buf) uploaded.set(char.imageFile, await uploadImageToPod(podId, buf, char.imageFile))
+        if (char?.imageFile) {
+          if (!uploaded.has(char.imageFile)) {
+            const buf = readCharacterImage(char.imageFile)
+            if (buf) uploaded.set(char.imageFile, await uploadImageToPod(podId, buf, char.imageFile))
+          }
+          referenceImage = uploaded.get(char.imageFile)
         }
-        referenceImage = uploaded.get(char.imageFile)
+
+        const composed = composeScenePrompt(scene, characters)
+        const built = buildWorkflow({
+          model: targetModel,
+          prompt: composed,
+          seconds: scene.seconds || 6,
+          width: targetModel === 'minimax' ? (res.w >= 1280 ? res.w : 1280) : res.w,
+          height: targetModel === 'minimax' ? (res.h >= 720 ? res.h : 720) : res.h,
+          referenceImage,
+          referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
+        })
+
+        const { prompt_id } = await submitPrompt(podId, built.workflow)
+        scene.promptId = prompt_id
+        scene.state = 'queued'
+      } catch (e) {
+        scene.state = 'error'
+        scene.error = (e as Error).message
       }
-
-      const composed = composeScenePrompt(scene, characters)
-      const built = buildWorkflow({
-        model: targetModel,
-        prompt: composed,
-        seconds: scene.seconds || 6,
-        width: targetModel === 'minimax' ? (res.w >= 1280 ? res.w : 1280) : res.w,
-        height: targetModel === 'minimax' ? (res.h >= 720 ? res.h : 720) : res.h,
-        referenceImage,
-        referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
-      })
-
-      const { prompt_id } = await submitPrompt(podId, built.workflow)
-      scene.promptId = prompt_id
-      scene.state = 'queued'
-      scene.error = undefined
-      scene.filename = undefined
-    } catch (e) {
-      scene.state = 'error'
-      scene.error = (e as Error).message
     }
   }
 
