@@ -139,16 +139,10 @@ export async function persistClip(
   const localPath = getLocalClipPath(filename)
   fs.writeFileSync(localPath, buffer)
   if (isR2Configured()) {
-    const userId = options?.userId || 'admin'
     const projectId = options?.projectId || 'default-project'
     try {
-      // Save under canonical structured paths for per-user / per-project organisation
-      await Promise.allSettled([
-        putFilm(filename, localPath),
-        putFilm(`films/${filename}`, localPath),
-        putFilm(`projects/${projectId}/${filename}`, localPath),
-        putFilm(`users/${userId}/projects/${projectId}/${filename}`, localPath),
-      ])
+      // Store cleanly under structured project directory in R2
+      await putFilm(`projects/${projectId}/${filename}`, localPath)
     } catch {
       // ignore R2 upload failure if local save succeeded
     }
