@@ -66,18 +66,45 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
 
       const now = Date.now()
       const uptimeSec = Number((pod.runtime as { uptimeInSeconds?: number })?.uptimeInSeconds || 0)
-      const isMiniMaxPod = podName.includes('minimax')
-      const warmupWindowSec = isMiniMaxPod ? 1500 : 900 // 25min for MiniMax (65GB weights), 15min for LTX
+      const base = podBase(podId)
 
-      // 1. Initial Warmup / Provisioning Protection:
-      // While the pod is younger than the warmup window, keep it alive so model weight downloads
-      // are never killed prematurely (even if ComfyUI is up with 0 queued jobs).
-      if (uptimeSec < warmupWindowSec) {
+      // Check if ComfyUI is up and responsive
+      let comfyReady = false
+      let runningCount = 0
+      let pendingCount = 0
+
+      try {
+        const qRes = await fetch(`${base}/queue`, {
+          headers: comfyHeaders(base),
+          signal: AbortSignal.timeout(3000),
+        })
+        if (qRes.ok) {
+          comfyReady = true
+          const qData = await qRes.json()
+          runningCount = Array.isArray(qData.queue_running) ? qData.queue_running.length : 0
+          pendingCount = Array.isArray(qData.queue_pending) ? qData.queue_pending.length : 0
+        }
+      } catch {
+        // ComfyUI still booting
+      }
+
+      // If pod is actively processing jobs, update last active timestamp
+      if (runningCount > 0 || pendingCount > 0) {
         podLastActivity.set(podId, now)
         continue
       }
 
-      // If we don't have an activity record yet, initialize it to now to give it a full idle window
+      // If ComfyUI is NOT ready yet, allow a brief provisioning warmup window
+      if (!comfyReady) {
+        const isMiniMaxPod = podName.includes('minimax')
+        const warmupWindowSec = isMiniMaxPod ? 1200 : 600
+        if (uptimeSec < warmupWindowSec) {
+          podLastActivity.set(podId, now)
+          continue
+        }
+      }
+
+      // If we don't have an activity record yet, initialize it
       if (!podLastActivity.has(podId)) {
         podLastActivity.set(podId, now)
         continue
@@ -87,39 +114,12 @@ export async function checkAndAutoTerminateIdlePods(): Promise<{ terminated: str
       const idleTimeMs = now - lastActive
       const maxIdleMs = autoShutdownMinutes * 60 * 1000
 
-      // 2. Inactivity Evaluation (only evaluated after warmup window has passed):
+      // Inactivity Evaluation:
       if (idleTimeMs >= maxIdleMs) {
-        try {
-          const base = podBase(podId)
-          const qRes = await fetch(`${base}/queue`, {
-            headers: comfyHeaders(base),
-            signal: AbortSignal.timeout(4000),
-          })
-
-          if (qRes.ok) {
-            const qData = await qRes.json()
-            const runningCount = Array.isArray(qData.queue_running) ? qData.queue_running.length : 0
-            const pendingCount = Array.isArray(qData.queue_pending) ? qData.queue_pending.length : 0
-
-            if (runningCount > 0 || pendingCount > 0) {
-              // Pod is actively rendering, reset activity timestamp
-              podLastActivity.set(podId, now)
-              continue
-            }
-          }
-
-          // Pod is verified completely idle past warmup window with 0 jobs -> auto-terminate to save billing!
-          console.log(`[Auto-Shutdown] ⏱️ Pod ${podId} (${pod.name}) idle for ${Math.round(idleTimeMs / 1000)}s (uptime: ${uptimeSec}s, threshold: ${autoShutdownMinutes}m). Terminating pod to prevent idle charges...`)
-          await terminatePod(podId)
-          podLastActivity.delete(podId)
-          terminated.push(podId)
-        } catch (err: any) {
-          // If ComfyUI is completely unreachable/dead past warmup window and idle threshold exceeded, terminate
-          console.log(`[Auto-Shutdown] Pod ${podId} unreachable and idle for ${Math.round(idleTimeMs / 1000)}s (uptime: ${uptimeSec}s). Terminating...`)
-          await terminatePod(podId)
-          podLastActivity.delete(podId)
-          terminated.push(podId)
-        }
+        console.log(`[Auto-Shutdown] ⏱️ Pod ${podId} (${pod.name}) has been idle with 0 jobs for ${Math.round(idleTimeMs / 1000)}s (threshold: ${autoShutdownMinutes}m). Auto-terminating to save costs...`)
+        await terminatePod(podId)
+        podLastActivity.delete(podId)
+        terminated.push(podId)
       }
     }
 

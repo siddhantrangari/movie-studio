@@ -191,9 +191,30 @@ export function buildWorkflow(p: GenParams) {
   if (p.model === 'minimax') {
     return buildMiniMaxWorkflow(p)
   }
-  const width = p.width ?? 704
-  const height = p.height ?? 384
+  const targetWidth = p.width ?? 704
+  const targetHeight = p.height ?? 384
   const fps = p.fps ?? 25
+  const isLongClip = (p.seconds ?? 4) > 6
+  let width = targetWidth
+  let height = targetHeight
+
+  // LTX 22B transformer VRAM safety scaling:
+  // For clips > 6 seconds (up to 300 frames), clamp the diffusion canvas to 768x432 (16:9) / 432x768 (9:16)
+  // to avoid PyTorch 38GB+ single-tensor OOM spikes.
+  if (isLongClip && (width > 768 || height > 512)) {
+    const aspect = width / height
+    if (aspect >= 1) {
+      width = 768
+      height = Math.round((768 / aspect) / 32) * 32
+    } else {
+      height = 768
+      width = Math.round((768 * aspect) / 32) * 32
+    }
+  } else if (!isLongClip && (width > 1280 || height > 720)) {
+    width = 1280
+    height = 720
+  }
+
   const length = framesForSeconds(p.seconds ?? 4, fps)
   const seed = p.seed ?? Math.floor(Math.random() * 2 ** 31)
   const negative = p.negativePrompt || DEFAULT_NEGATIVE
@@ -225,8 +246,18 @@ export function buildWorkflow(p: GenParams) {
 
     '17': { class_type: 'LTXVSeparateAVLatent', inputs: { av_latent: ['16', 0] } },
     '18': { class_type: 'VAEDecode', inputs: { samples: ['17', 0], vae: ['3', 0] } },
+    '18a': {
+      class_type: 'ImageScale',
+      inputs: {
+        image: ['18', 0],
+        upscale_method: 'lanczos',
+        width: targetWidth,
+        height: targetHeight,
+        crop: 'disabled',
+      },
+    },
     '19': { class_type: 'LTXVAudioVAEDecode', inputs: { samples: ['17', 1], audio_vae: ['4', 0] } },
-    '20': { class_type: 'CreateVideo', inputs: { images: ['18', 0], fps, audio: ['19', 0] } },
+    '20': { class_type: 'CreateVideo', inputs: { images: ['18a', 0], fps, audio: ['19', 0] } },
     '21': {
       class_type: 'SaveVideo',
       inputs: { video: ['20', 0], filename_prefix: 'gen/clip', format: 'auto' },
