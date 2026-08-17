@@ -74,6 +74,11 @@ Genre: ${isAutoGenre ? 'Autonomously choose the most fitting cinematic tone' : g
 Camera Preference: ${isAutoCamera ? 'Autonomously choose dynamic camera setups per shot' : cameraStyle}
 Lighting Preference: ${isAutoLighting ? 'Autonomously design lighting physics per shot' : lightingStyle}
 
+CRITICAL CHARACTER REFERENCE TAGGING RULE:
+- For the primary main character / performer, ALWAYS use the exact tag "@image1" in every shot's prompt to bind to the user's attached reference photo.
+- If there is a secondary character, use "@image2".
+- NEVER invent arbitrary role tags like "@Girl", "@Boy", "@Woman", "@Man", or "@hero" — always use "@image1" for the referenced character.
+
 Respond ONLY with valid JSON in this exact structure:
 {
   "title": "Movie Title",
@@ -82,10 +87,10 @@ Respond ONLY with valid JSON in this exact structure:
     {
       "order": 1,
       "title": "Shot Name",
-      "seconds": 5,
-      "camera": "Camera movement description (e.g. Slow Push In)",
+      "seconds": 6,
+      "camera": "Camera movement description (e.g. 35mm Prime, Slow Push In)",
       "lighting": "Lighting setup description",
-      "prompt": "Full LTX 2.5 photorealistic shot prompt following the optics, lighting, texture, and motion rules"
+      "prompt": "Full photorealistic shot prompt using @image1 for the referenced character, following physical optics, lighting, texture, and motion rules"
     }
   ]
 }`
