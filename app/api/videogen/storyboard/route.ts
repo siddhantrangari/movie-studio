@@ -124,14 +124,9 @@ export async function POST(req: NextRequest) {
   let podId = await getRunningPodId(targetModel)
 
   if (!podId) {
-    const otherModel: 'ltx25' | 'minimax' = targetModel === 'minimax' ? 'ltx25' : 'minimax'
-    const otherPodId = await getRunningPodId(otherModel)
-    if (otherPodId) {
-      targetModel = otherModel
-      podId = otherPodId
-    } else {
-      return NextResponse.json({ error: 'GPU Pod is offline. Please deploy or start the GPU node from Engines Hub.' }, { status: 409 })
-    }
+    return NextResponse.json({
+      error: `${targetModel === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX-Video 2.5'} GPU pod is not running or still initializing. Please check the Engines Hub.`,
+    }, { status: 409 })
   }
 
   const { RESOLUTIONS } = await import('@/lib/resolutions')
