@@ -307,13 +307,44 @@ export default function SingingStudio({
     }
   }
 
+  // Cancellation ref to immediately abort active polling loops
+  const cancelledRef = useRef<Record<number, boolean>>({})
+
+  // Cancel / Reset a single scene generation
+  const handleCancelScene = (index: number) => {
+    cancelledRef.current[index] = true
+    setScenes((prev) =>
+      prev.map((s, idx) => (idx === index ? { ...s, status: 'idle', progress: 0, step: 0, error: undefined } : s))
+    )
+    if (currentGeneratingIndex === index) {
+      setCurrentGeneratingIndex(null)
+    }
+    setPodDownloading(false)
+    toast.info(`Scene Part #${index + 1} generation cancelled.`)
+  }
+
+  // Cancel all active batch generations
+  const handleCancelAll = () => {
+    scenes.forEach((_, idx) => {
+      cancelledRef.current[idx] = true
+    })
+    setIsGeneratingAll(false)
+    setCurrentGeneratingIndex(null)
+    setPodDownloading(false)
+    setScenes((prev) =>
+      prev.map((s) => (s.status === 'generating' ? { ...s, status: 'idle', progress: 0, step: 0, error: undefined } : s))
+    )
+    toast.info('Batch generation stopped.')
+  }
+
   // Generate single part via MiniMax Ref2VA
   const generateSingleScene = async (index: number): Promise<boolean> => {
     const sc = scenes[index]
     if (!sc) return false
 
+    cancelledRef.current[index] = false
     setScenes((prev) =>
-      prev.map((s, idx) => (idx === index ? { ...s, status: 'generating', progress: 0, error: undefined } : s))
+      prev.map((s, idx) => (idx === index ? { ...s, status: 'generating', progress: 0, step: 0, error: undefined } : s))
     )
     setCurrentGeneratingIndex(index)
     const startTime = Date.now()
@@ -337,7 +368,7 @@ export default function SingingStudio({
 
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        throw new Error(d.error || 'Generation failed')
+        throw new Error(d.error || 'Generation failed to start')
       }
 
       const data = await res.json()
@@ -347,7 +378,24 @@ export default function SingingStudio({
       let done = false
       let downloadWarned = false
       while (!done) {
+        if (cancelledRef.current[index]) {
+          setPodDownloading(false)
+          return false
+        }
+
         await new Promise((r) => setTimeout(r, 4000))
+
+        if (cancelledRef.current[index]) {
+          setPodDownloading(false)
+          return false
+        }
+
+        // Timeout check (15 min)
+        const elapsedSec = (Date.now() - startTime) / 1000
+        if (elapsedSec > 900) {
+          throw new Error('Generation timed out (15 mins exceeded). Please try rendering again.')
+        }
+
         const statusRes = await fetch(`/api/videogen/status?promptId=${promptId}&podId=${data.podId || ''}`)
         if (!statusRes.ok) continue
         const statusData = await statusRes.json()
@@ -358,8 +406,6 @@ export default function SingingStudio({
             downloadWarned = true
             setPodDownloading(true)
           }
-          // Estimate download progress based on elapsed time (MiniMax weights ~15min total)
-          const elapsedSec = (Date.now() - startTime) / 1000
           const estimatedPct = Math.min(95, Math.round((elapsedSec / 900) * 100))
           setPodDownloadProgress(estimatedPct)
           setScenes((prev) =>
@@ -418,11 +464,20 @@ export default function SingingStudio({
       )
       toast.error(`Part ${index + 1} failed: ${err.message}`)
       return false
+    } finally {
+      if (currentGeneratingIndex === index) {
+        setCurrentGeneratingIndex(null)
+      }
     }
   }
 
   // Generate all parts sequentially & auto-assemble
   const handleGenerateAll = async () => {
+    if (isGeneratingAll) {
+      handleCancelAll()
+      return
+    }
+
     if (scenes.length === 0) {
       toast.error('Generate a storyboard first!')
       return
@@ -436,6 +491,10 @@ export default function SingingStudio({
     let allSucceeded = true
 
     for (let i = 0; i < scenes.length; i++) {
+      if (cancelledRef.current[i]) {
+        allSucceeded = false
+        break
+      }
       if (scenes[i].status === 'done' && scenes[i].videoUrl) continue
       const success = await generateSingleScene(i)
       if (!success) {
@@ -789,28 +848,53 @@ export default function SingingStudio({
                 {logline && <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0.15rem 0 0' }}>{logline}</p>}
               </div>
             </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              {scenes.some((s) => s.status === 'generating') && (
+                <button
+                  type="button"
+                  onClick={handleCancelAll}
+                  style={{
+                    background: 'rgba(239,68,68,0.15)',
+                    border: '1px solid #ef4444',
+                    color: '#fca5a5',
+                    borderRadius: '0.5rem',
+                    padding: '0.55rem 0.85rem',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                  }}
+                >
+                  <span>⏹ Stop All</span>
+                </button>
+              )}
 
-            <button
-              type="button"
-              onClick={handleGenerateAll}
-              disabled={isGeneratingAll || isAssembling}
-              style={{
-                background: 'linear-gradient(135deg, #e8b94a 0%, #f59e0b 100%)',
-                color: '#05080e',
-                border: 'none',
-                borderRadius: '0.5rem',
-                padding: '0.55rem 1rem',
-                fontWeight: 900,
-                fontSize: '12.5px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                boxShadow: '0 0 16px rgba(232,185,74,0.3)',
-              }}
-            >
-              <span>🚀 {isGeneratingAll ? 'Generating Music Video...' : 'Generate Full 4K Music Video'}</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleGenerateAll}
+                disabled={isAssembling}
+                style={{
+                  background: isGeneratingAll
+                    ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                    : 'linear-gradient(135deg, #e8b94a 0%, #f59e0b 100%)',
+                  color: '#05080e',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  padding: '0.55rem 1rem',
+                  fontWeight: 900,
+                  fontSize: '12.5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: isGeneratingAll ? '0 0 16px rgba(239,68,68,0.4)' : '0 0 16px rgba(232,185,74,0.3)',
+                }}
+              >
+                <span>{isGeneratingAll ? '⏹ Stop Batch Generation' : '🚀 Generate Full 4K Music Video'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Scene Cards Grid */}
@@ -820,7 +904,7 @@ export default function SingingStudio({
                 key={idx}
                 style={{
                   background: '#070c14',
-                  border: `1px solid ${currentGeneratingIndex === idx ? 'var(--gold)' : sc.status === 'done' ? '#22c55e' : '#1a2840'}`,
+                  border: `1px solid ${sc.status === 'error' ? '#ef4444' : currentGeneratingIndex === idx ? 'var(--gold)' : sc.status === 'done' ? '#22c55e' : '#1a2840'}`,
                   borderRadius: '0.75rem',
                   padding: '1rem',
                   display: 'flex',
@@ -849,44 +933,119 @@ export default function SingingStudio({
                       </span>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => handleRegenerateScene(idx)}
-                      disabled={regeneratingIndex === idx || isGeneratingAll}
-                      style={{
-                        background: 'rgba(232,185,74,0.1)',
-                        border: '1px solid rgba(232,185,74,0.25)',
-                        color: 'var(--gold)',
-                        borderRadius: '0.35rem',
-                        padding: '0.25rem 0.55rem',
-                        fontSize: '10.5px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                      title="AI will regenerate an alternative camera move & prompt for this scene"
-                    >
-                      {regeneratingIndex === idx ? '⏳ Regenerating...' : '🔄 Regenerate Prompt'}
-                    </button>
+                    {sc.status === 'generating' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelScene(idx)}
+                        style={{
+                          background: 'rgba(239,68,68,0.15)',
+                          border: '1px solid rgba(239,68,68,0.4)',
+                          color: '#fca5a5',
+                          borderRadius: '0.35rem',
+                          padding: '0.25rem 0.55rem',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                        title="Cancel this part generation"
+                      >
+                        🛑 Cancel
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRegenerateScene(idx)}
+                          disabled={regeneratingIndex === idx || isGeneratingAll}
+                          style={{
+                            background: 'rgba(232,185,74,0.1)',
+                            border: '1px solid rgba(232,185,74,0.25)',
+                            color: 'var(--gold)',
+                            borderRadius: '0.35rem',
+                            padding: '0.25rem 0.55rem',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                          title="AI will regenerate an alternative camera move & prompt for this scene"
+                        >
+                          {regeneratingIndex === idx ? '⏳ Regenerating...' : '🔄 Regenerate Prompt'}
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => generateSingleScene(idx)}
-                      disabled={isGeneratingAll || sc.status === 'generating'}
-                      style={{
-                        background: sc.status === 'done' ? '#0e182e' : 'rgba(59,130,246,0.15)',
-                        border: `1px solid ${sc.status === 'done' ? '#1a2840' : 'rgba(59,130,246,0.3)'}`,
-                        color: sc.status === 'done' ? '#94a3b8' : '#93c5fd',
-                        borderRadius: '0.35rem',
-                        padding: '0.25rem 0.55rem',
-                        fontSize: '10.5px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {sc.status === 'done' ? 'Re-render Part' : '⚡ Render Part'}
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => generateSingleScene(idx)}
+                          disabled={isGeneratingAll}
+                          style={{
+                            background: sc.status === 'done' ? '#0e182e' : 'rgba(59,130,246,0.15)',
+                            border: `1px solid ${sc.status === 'done' ? '#1a2840' : 'rgba(59,130,246,0.3)'}`,
+                            color: sc.status === 'done' ? '#94a3b8' : '#93c5fd',
+                            borderRadius: '0.35rem',
+                            padding: '0.25rem 0.55rem',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {sc.status === 'done' ? 'Re-render Part' : sc.status === 'error' ? '⚡ Retry Part' : '⚡ Render Part'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
+
+                {/* Error Banner */}
+                {(sc.status === 'error' || sc.error) && (
+                  <div style={{
+                    background: 'rgba(239,68,68,0.1)',
+                    border: '1px solid rgba(239,68,68,0.35)',
+                    borderRadius: '0.5rem',
+                    padding: '0.65rem 0.85rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    flexWrap: 'wrap',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '11px', color: '#fca5a5' }}>
+                      <span>⚠️</span>
+                      <span><strong>Error:</strong> {sc.error || 'Generation stopped or failed.'}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => generateSingleScene(idx)}
+                        style={{
+                          background: 'rgba(239,68,68,0.25)',
+                          border: '1px solid #ef4444',
+                          color: '#fef2f2',
+                          borderRadius: '0.3rem',
+                          padding: '0.2rem 0.55rem',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🔄 Retry
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelScene(idx)}
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          color: '#94a3b8',
+                          borderRadius: '0.3rem',
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '10.5px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ✕ Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Prompt Textarea */}
                 <textarea
@@ -949,11 +1108,29 @@ export default function SingingStudio({
                           </>
                         )}
                       </span>
-                      <span style={{ color: '#F2F5FA', fontWeight: 800 }}>
-                        {podDownloading && currentGeneratingIndex === idx
-                          ? `~${Math.max(1, Math.round((100 - podDownloadProgress) * 0.09))}min left`
-                          : sc.progress ? `${Math.round(sc.progress)}%` : 'Rendering...'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ color: '#F2F5FA', fontWeight: 800 }}>
+                          {podDownloading && currentGeneratingIndex === idx
+                            ? `~${Math.max(1, Math.round((100 - podDownloadProgress) * 0.09))}min left`
+                            : sc.progress ? `${Math.round(sc.progress)}%` : 'Rendering...'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelScene(idx)}
+                          style={{
+                            background: 'rgba(239,68,68,0.2)',
+                            border: '1px solid rgba(239,68,68,0.5)',
+                            color: '#fca5a5',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '0.3rem',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          🛑 Cancel
+                        </button>
+                      </div>
                     </div>
 
                     {/* Animated Progress Bar */}
