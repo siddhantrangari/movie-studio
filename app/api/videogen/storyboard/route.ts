@@ -136,8 +136,43 @@ export async function POST(req: NextRequest) {
     ? sb.scenes.filter((s) => sceneIds.includes(s.id))
     : sb.scenes
 
-  const refList = (reqRefs && reqRefs.length > 0 ? reqRefs : (sb.referenceImages || []))
+  const rawRefList = (reqRefs && reqRefs.length > 0 ? reqRefs : (sb.referenceImages || []))
+  const uploadedRefs: string[] = []
   const uploaded = new Map<string, string>()
+
+  // Upload all attached reference images to the GPU pod
+  for (let idx = 0; idx < rawRefList.length; idx++) {
+    const img = rawRefList[idx]
+    if (typeof img === 'string' && img.startsWith('data:image/')) {
+      const matches = img.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+      if (matches && matches[2]) {
+        const mime = matches[1] || 'image/png'
+        const ext = mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png'
+        const buf = Buffer.from(matches[2], 'base64')
+        const fname = `ref_${idx}_${Date.now()}.${ext}`
+        try {
+          const uploadedName = await uploadImageToPod(podId, buf, fname)
+          uploadedRefs.push(uploadedName)
+        } catch (err) {
+          console.error('Error uploading storyboard ref image:', err)
+        }
+      }
+    } else if (typeof img === 'string' && img.startsWith('http')) {
+      try {
+        const res = await fetch(img)
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer())
+          const fname = `ref_${idx}_${Date.now()}.png`
+          const uploadedName = await uploadImageToPod(podId, buf, fname)
+          uploadedRefs.push(uploadedName)
+        }
+      } catch (err) {
+        console.error('Error fetching ref image URL:', err)
+      }
+    } else if (typeof img === 'string' && img.trim()) {
+      uploadedRefs.push(img.trim())
+    }
+  }
 
   for (const scene of targets) {
     try {
@@ -165,7 +200,7 @@ export async function POST(req: NextRequest) {
         width: targetModel === 'minimax' ? (res.w >= 1280 ? res.w : 1280) : res.w,
         height: targetModel === 'minimax' ? (res.h >= 720 ? res.h : 720) : res.h,
         referenceImage,
-        referenceImages: refList.length > 0 ? refList : undefined,
+        referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
       })
 
       const { prompt_id } = await submitPrompt(podId, built.workflow)
