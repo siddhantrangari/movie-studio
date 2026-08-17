@@ -306,7 +306,10 @@ export default function PromptBuilderDrawer({
 
       // Step 3: Poll GPU progress until all shots are rendered
       setMovieGenState('rendering')
-      setMovieGenProgress((p) => ({ ...p, stage: `Rendering shots on GPU (0/${result.shots!.length} completed)...` }))
+      const initialStage = queueData.booting
+        ? (queueData.message || '🚀 GPU node is starting up... Shots #1–5 are queued and will render automatically.')
+        : `Rendering shots on GPU (0/${result.shots!.length} completed)...`
+      setMovieGenProgress((p) => ({ ...p, stage: initialStage }))
 
       const checkRenderDone = async (): Promise<boolean> => {
         const r = await fetch(`/api/videogen/storyboard?id=${sbId}`, { cache: 'no-store' })

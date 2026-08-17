@@ -21,12 +21,65 @@ export async function GET(req: NextRequest) {
     const sb = getStoryboard(id)
     if (!sb) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Auto-poll ComfyUI status for any pending scenes
-    const pendingScenes = (sb.scenes || []).filter((s) => s.promptId && (s.state === 'queued' || s.state === 'running' || !s.state))
-    if (pendingScenes.length > 0) {
-      const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
-      if (podId) {
-        let changed = false
+    // Auto-poll and auto-dispatch queued scenes when GPU pod becomes ready
+    const targetModel = (sb.model || 'ltx25') as 'ltx25' | 'minimax'
+    const podId = await getRunningPodId(targetModel)
+
+    if (podId) {
+      let changed = false
+      const { RESOLUTIONS } = await import('@/lib/resolutions')
+      const res = RESOLUTIONS[sb.resolution] ?? RESOLUTIONS[0]
+      const characters = getCharacters()
+      const rawRefList = sb.referenceImages || []
+      let uploadedRefs: string[] | null = null
+
+      // Check if any scenes are waiting to be submitted
+      for (const scene of sb.scenes || []) {
+        if (scene.state === 'queued' && !scene.promptId) {
+          try {
+            if (!uploadedRefs) {
+              uploadedRefs = []
+              for (let idx = 0; idx < rawRefList.length; idx++) {
+                const img = rawRefList[idx]
+                if (typeof img === 'string' && img.startsWith('data:image/')) {
+                  const matches = img.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+                  if (matches && matches[2]) {
+                    const mime = matches[1] || 'image/png'
+                    const ext = mime.includes('jpeg') || mime.includes('jpg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png'
+                    const buf = Buffer.from(matches[2], 'base64')
+                    const fname = `ref_${idx}_${Date.now()}.${ext}`
+                    uploadedRefs.push(await uploadImageToPod(podId, buf, fname))
+                  }
+                } else if (typeof img === 'string' && img.trim()) {
+                  uploadedRefs.push(img.trim())
+                }
+              }
+            }
+
+            const composed = composeScenePrompt(scene, characters)
+            const built = buildWorkflow({
+              model: targetModel,
+              prompt: composed,
+              seconds: scene.seconds || 6,
+              width: targetModel === 'minimax' ? (res.w >= 1280 ? res.w : 1280) : res.w,
+              height: targetModel === 'minimax' ? (res.h >= 720 ? res.h : 720) : res.h,
+              referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
+            })
+
+            const { prompt_id } = await submitPrompt(podId, built.workflow)
+            scene.promptId = prompt_id
+            scene.state = 'queued'
+            changed = true
+          } catch (err: any) {
+            // ComfyUI may still be warming up
+            console.log('[Storyboard Auto-Dispatch] Waiting for ComfyUI to accept jobs:', err.message)
+          }
+        }
+      }
+
+      // Check running jobs status
+      const pendingScenes = (sb.scenes || []).filter((s) => s.promptId && (s.state === 'queued' || s.state === 'running' || !s.state))
+      if (pendingScenes.length > 0) {
         const { logUsage } = await import('@/lib/usage')
         for (const scene of pendingScenes) {
           if (!scene.promptId) continue
@@ -46,7 +99,7 @@ export async function GET(req: NextRequest) {
               logUsage({
                 category: 'gpu_compute',
                 type: 'storyboard_shot_render',
-                model: 'ltx-video-2.5',
+                model: targetModel === 'minimax' ? 'minimax-h3' : 'ltx-video-2.5',
                 durationSeconds: renderSecs,
                 clipSeconds: scene.seconds || 6,
                 gpuModel: 'NVIDIA RTX 4090 / A100',
@@ -57,9 +110,10 @@ export async function GET(req: NextRequest) {
             }
           }
         }
-        if (changed) {
-          saveStoryboard(sb)
-        }
+      }
+
+      if (changed) {
+        saveStoryboard(sb)
       }
     }
 
@@ -124,9 +178,39 @@ export async function POST(req: NextRequest) {
   let podId = await getRunningPodId(targetModel)
 
   if (!podId) {
+    console.log(`[Auto-Deploy] ${targetModel.toUpperCase()} GPU pod is offline. Launching on-demand node for storyboard...`)
+    const { bringUp } = await import('@/lib/podops')
+    const targetTier = targetModel === 'minimax' ? 'ultra_4k' : 'standard'
+    // Fire bringUp in background so pod starts booting immediately
+    ;(async () => {
+      try {
+        for await (const log of bringUp(targetTier, undefined, targetModel)) {
+          console.log(`[Storyboard Auto-Deploy] ${log.text}`)
+        }
+      } catch (err) {
+        console.error('[Storyboard Auto-Deploy Error]', err)
+      }
+    })()
+
+    // Mark all target scenes as queued
+    const targets = sceneIds?.length
+      ? sb.scenes.filter((s) => sceneIds.includes(s.id))
+      : sb.scenes
+
+    for (const sc of targets) {
+      sc.state = 'queued'
+      sc.error = undefined
+      sc.promptId = undefined
+    }
+    saveStoryboard(sb)
+
     return NextResponse.json({
-      error: `${targetModel === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX-Video 2.5'} GPU pod is not running or still initializing. Please check the Engines Hub.`,
-    }, { status: 409 })
+      success: true,
+      booting: true,
+      storyboard: sb,
+      podId: null,
+      message: `🚀 ${targetModel === 'minimax' ? 'MiniMax Hailuo 3' : 'LTX-Video 2.5'} GPU node is starting up. All ${targets.length} shots are queued and will begin rendering automatically once ComfyUI initializes.`,
+    })
   }
 
   const { RESOLUTIONS } = await import('@/lib/resolutions')
