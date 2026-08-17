@@ -64,6 +64,8 @@ export default function PromptBuilderDrawer({
   const [cameraStyle, setCameraStyle] = useState('⚡ Auto / Dynamic Camera Progression (AI Decides)')
   const [lightingStyle, setLightingStyle] = useState('⚡ Auto / Cinematic Lighting Physics (AI Decides)')
   const [durationSeconds, setDurationSeconds] = useState(10)
+  const [movieTargetDuration, setMovieTargetDuration] = useState<'30s' | '1m' | '2m' | '3m' | '5m' | 'custom'>('30s')
+  const [movieCustomShots, setMovieCustomShots] = useState(10)
   const [loading, setLoading] = useState(false)
   const [elapsedSec, setElapsedSec] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -115,6 +117,31 @@ export default function PromptBuilderDrawer({
       setElapsedSec(Number(((Date.now() - startTime) / 1000).toFixed(1)))
     }, 100)
 
+    let targetDurationMinutes: number | undefined
+    let targetShots: number | undefined
+
+    if (type === 'movie') {
+      if (movieTargetDuration === '30s') {
+        targetShots = 5
+        targetDurationMinutes = 0.5
+      } else if (movieTargetDuration === '1m') {
+        targetShots = 10
+        targetDurationMinutes = 1
+      } else if (movieTargetDuration === '2m') {
+        targetShots = 20
+        targetDurationMinutes = 2
+      } else if (movieTargetDuration === '3m') {
+        targetShots = 30
+        targetDurationMinutes = 3
+      } else if (movieTargetDuration === '5m') {
+        targetShots = 40
+        targetDurationMinutes = 5
+      } else if (movieTargetDuration === 'custom') {
+        targetShots = Math.max(3, Math.min(50, movieCustomShots))
+        targetDurationMinutes = (targetShots * 6) / 60
+      }
+    }
+
     try {
       const res = await fetch('/api/videogen/prompt-builder', {
         method: 'POST',
@@ -126,6 +153,8 @@ export default function PromptBuilderDrawer({
           cameraStyle,
           lightingStyle,
           durationSeconds,
+          targetDurationMinutes,
+          targetShots,
         }),
       })
 
@@ -702,6 +731,68 @@ export default function PromptBuilderDrawer({
             </select>
           </div>
 
+          {/* Storyboard Target Movie Duration & Shot Depth (Only when Movie/Storyboard mode is selected) */}
+          {type === 'movie' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div>
+                <label style={{ fontSize: '9.5px', color: 'var(--gold, #E8B94A)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                  <span>🎬 Target Movie Runtime & Story Depth</span>
+                  <span style={{ color: '#94a3b8', textTransform: 'none', fontWeight: 600 }}>
+                    {movieTargetDuration === '30s' ? '5 Shots · ~30s' : movieTargetDuration === '1m' ? '10 Shots · ~1m' : movieTargetDuration === '2m' ? '20 Shots · ~2m' : movieTargetDuration === '3m' ? '30 Shots · ~3m' : movieTargetDuration === '5m' ? '40 Shots · ~5m' : `${movieCustomShots} Shots · ~${Math.round(movieCustomShots * 6)}s`}
+                  </span>
+                </label>
+                <select
+                  value={movieTargetDuration}
+                  onChange={(e) => setMovieTargetDuration(e.target.value as typeof movieTargetDuration)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    borderRadius: '0.4rem',
+                    background: '#0e182e',
+                    border: '1px solid rgba(232,185,74,0.4)',
+                    color: '#F2F5FA',
+                    fontWeight: 700,
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="30s">⚡ Quick Trailer / Teaser (5 Shots · ~30s)</option>
+                  <option value="1m">📽️ 1-Minute Short Film (10 Shots · ~1 min)</option>
+                  <option value="2m">🎬 2-Minute Narrative Story (20 Shots · ~2 mins)</option>
+                  <option value="3m">🎭 3-Minute Extended Film (30 Shots · ~3 mins)</option>
+                  <option value="5m">🌟 5-Minute Master Movie (40 Shots · ~5 mins)</option>
+                  <option value="custom">⚙️ Custom Shot Count</option>
+                </select>
+              </div>
+
+              {movieTargetDuration === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#070c14', padding: '0.45rem 0.6rem', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
+                  <span style={{ fontSize: '10.5px', color: '#94a3b8', flex: 1 }}>Number of Cinematic Shots:</span>
+                  <input
+                    type="number"
+                    min={3}
+                    max={50}
+                    value={movieCustomShots}
+                    onChange={(e) => setMovieCustomShots(Math.max(3, Math.min(50, Number(e.target.value) || 3)))}
+                    style={{
+                      width: '65px',
+                      padding: '0.3rem',
+                      borderRadius: '0.3rem',
+                      background: '#0e182e',
+                      border: '1px solid #1a2840',
+                      color: 'var(--gold, #E8B94A)',
+                      fontWeight: 800,
+                      fontSize: '11.5px',
+                      textAlign: 'center',
+                      outline: 'none',
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>shots</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Prompt Concept Textarea */}
           <div>
             <label style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', display: 'block', marginBottom: '0.3rem' }}>
@@ -1005,38 +1096,60 @@ export default function PromptBuilderDrawer({
               {/* Movie Storyboard View with Edit / Regenerate per Shot & 1-Click Generate */}
               {type === 'movie' && result.shots && (
                 <>
-                  <div>
-                    <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
-                      {result.title || 'Movie Storyboard'}
-                    </h4>
-                    {result.logline && <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '0.15rem 0 0.5rem' }}>{result.logline}</p>}
+                  {(() => {
+                    const totalMovieSecs = result.shots.reduce((acc, s) => acc + (s.seconds || 6), 0)
+                    const formattedRuntime = totalMovieSecs >= 60 ? `${Math.floor(totalMovieSecs / 60)}m ${totalMovieSecs % 60}s` : `${totalMovieSecs}s`
 
-                    {/* 1-Click Full Movie Master Button */}
-                    <div style={{ margin: '0.5rem 0 0.85rem' }}>
-                      <button
-                        onClick={handleGenerateFullMovie}
-                        disabled={movieGenState !== 'idle' && movieGenState !== 'done' && movieGenState !== 'error'}
-                        style={{
-                          width: '100%',
-                          padding: '0.75rem',
-                          background: 'linear-gradient(135deg, #E8B94A, #f59e0b)',
-                          color: '#05080e',
-                          border: 'none',
-                          borderRadius: '0.5rem',
-                          fontWeight: 900,
-                          fontSize: '12px',
-                          cursor: movieGenState === 'rendering' || movieGenState === 'assembling' ? 'not-allowed' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.5rem',
-                          boxShadow: '0 4px 15px rgba(232,185,74,0.35)',
-                        }}
-                      >
-                        <span>🎬</span>
-                        <span>1-Click Generate Full Movie (All Shots + Auto-Stitch)</span>
-                      </button>
-                    </div>
+                    return (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div>
+                            <h4 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--gold, #E8B94A)', margin: 0 }}>
+                              {result.title || 'Movie Storyboard'}
+                            </h4>
+                            {result.logline && <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '0.15rem 0 0' }}>{result.logline}</p>}
+                          </div>
+                        </div>
+
+                        {/* Runtime & Shot Count Badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0.5rem 0', background: '#0e182e', padding: '0.4rem 0.65rem', borderRadius: '0.4rem', border: '1px solid #1a2840' }}>
+                          <span style={{ fontSize: '10.5px', color: '#cbd5e1' }}>
+                            🎞️ <strong>{result.shots.length}</strong> Shots Total
+                          </span>
+                          <span style={{ fontSize: '10.5px', color: 'var(--gold, #E8B94A)', fontWeight: 800 }}>
+                            ⏱️ Total Film Runtime: ~{formattedRuntime}
+                          </span>
+                        </div>
+
+                        {/* 1-Click Full Movie Master Button */}
+                        <div style={{ margin: '0.5rem 0 0.85rem' }}>
+                          <button
+                            onClick={handleGenerateFullMovie}
+                            disabled={movieGenState !== 'idle' && movieGenState !== 'done' && movieGenState !== 'error'}
+                            style={{
+                              width: '100%',
+                              padding: '0.75rem',
+                              background: 'linear-gradient(135deg, #E8B94A, #f59e0b)',
+                              color: '#05080e',
+                              border: 'none',
+                              borderRadius: '0.5rem',
+                              fontWeight: 900,
+                              fontSize: '12px',
+                              cursor: movieGenState === 'rendering' || movieGenState === 'assembling' ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.5rem',
+                              boxShadow: '0 4px 15px rgba(232,185,74,0.35)',
+                            }}
+                          >
+                            <span>🎬</span>
+                            <span>1-Click Generate Full Movie ({result.shots.length} Shots + Auto-Stitch)</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                     {/* 1-Click Full Movie Live Generation Progress Card */}
                     {movieGenState !== 'idle' && (
@@ -1282,7 +1395,6 @@ export default function PromptBuilderDrawer({
                         ➕ Add Another Shot to Storyboard
                       </button>
                     </div>
-                  </div>
 
                   {onApplyMovie && (
                     <button

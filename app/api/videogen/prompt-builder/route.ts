@@ -17,7 +17,7 @@ CRITICAL PROMPT ENGINEERING RULES:
 3. Always tailor output to the requested type:
    - "scene": Deliver an ultra-rich single shot prompt (~100-160 words) + suggested camera move + suggested lighting + short title.
    - "character": Deliver a consistent character style sheet (character description, signature wardrobe textures, lighting profile, and exact image prompt for generating reference turnaround).
-   - "movie": Deliver a 3 to 5 shot cinematic storyboard sequence with continuity tags (@image1, @image2, or @CharacterName for referenced identities), shot order, timecodes, camera moves, and individual scene prompts.
+   - "movie": Deliver a comprehensive cinematic storyboard sequence tailored to the target movie duration (from 5-shot trailers up to 30-50 shot master films) with continuity tags (@image1, @image2, or @CharacterName for referenced identities), shot order, timecodes, camera moves, and individual scene prompts.
 `
 
 export async function POST(req: NextRequest) {
@@ -38,8 +38,16 @@ export async function POST(req: NextRequest) {
 
   const model = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
-  try {
-    const { type, input, genre, cameraStyle, lightingStyle, durationSeconds = 10 } = await req.json()
+  try {    const {
+      type,
+      input,
+      genre,
+      cameraStyle,
+      lightingStyle,
+      durationSeconds = 10,
+      targetDurationMinutes,
+      targetShots: rawTargetShots,
+    } = await req.json()
 
     if (!input || typeof input !== 'string' || !input.trim()) {
       return NextResponse.json({ error: 'Prompt input is required' }, { status: 400 })
@@ -48,6 +56,30 @@ export async function POST(req: NextRequest) {
     const isAutoCamera = !cameraStyle || cameraStyle.includes('Auto')
     const isAutoLighting = !lightingStyle || lightingStyle.includes('Auto')
     const isAutoGenre = !genre || genre.includes('Auto')
+
+    // Detect if user mentioned minutes/duration in prompt text (e.g., "5 minute movie", "2 minutes", "10 shots")
+    let detectedMinutes = targetDurationMinutes
+    let detectedShots = rawTargetShots
+
+    if (!detectedMinutes && !detectedShots) {
+      const minMatch = input.match(/(\d+)\s*(?:minute|minutes|min|mins)\s*(?:movie|film|story|video)?/i)
+      if (minMatch) {
+        detectedMinutes = parseFloat(minMatch[1])
+      }
+      const shotMatch = input.match(/(\d+)\s*(?:shot|shots|scenes)/i)
+      if (shotMatch) {
+        detectedShots = parseInt(shotMatch[1], 10)
+      }
+    }
+
+    // Determine target shot count (each shot is typically 6-8 seconds in diffusion video)
+    let calculatedShots = 5
+    if (detectedShots && detectedShots > 0) {
+      calculatedShots = Math.min(50, Math.max(3, detectedShots))
+    } else if (detectedMinutes && detectedMinutes > 0) {
+      // e.g. 1 min = 10 shots (6s each), 2 min = 20 shots, 5 min = 30-40 shots
+      calculatedShots = Math.min(50, Math.max(4, Math.round((detectedMinutes * 60) / 6.5)))
+    }
 
     let userPrompt = ''
     if (type === 'character') {
@@ -67,29 +99,36 @@ Respond ONLY with valid JSON in this exact structure:
   "voiceRecommendation": "Recommended voice style/tone for ElevenLabs (e.g. 'Deep Raspy Male, Calm Baritone, 35yo')"
 }`
     } else if (type === 'movie') {
-      userPrompt = `Analyze this story concept and autonomously design a 3 to 5 shot Cinematic Movie Storyboard Sequence:
+      const targetDurationDesc = detectedMinutes
+        ? `${detectedMinutes} minutes (~${Math.round(detectedMinutes * 60)} seconds)`
+        : `${calculatedShots * 6} seconds`
+
+      userPrompt = `Analyze this story concept and design a complete, multi-scene Cinematic Movie Storyboard Sequence with EXACTLY ${calculatedShots} SHOTS (Target Film Runtime: ${targetDurationDesc}):
 "${input.trim()}"
 
+Target Shot Count: Exactly ${calculatedShots} sequential cinematic shots (each ~6 to 8 seconds).
 Genre: ${isAutoGenre ? 'Autonomously choose the most fitting cinematic tone' : genre}
-Camera Preference: ${isAutoCamera ? 'Autonomously choose dynamic camera setups per shot' : cameraStyle}
+Camera Preference: ${isAutoCamera ? 'Autonomously choose dynamic camera setups per shot with progressive narrative pacing' : cameraStyle}
 Lighting Preference: ${isAutoLighting ? 'Autonomously design lighting physics per shot' : lightingStyle}
 
-CRITICAL CHARACTER REFERENCE TAGGING RULE:
-- For the primary main character / performer, ALWAYS use the exact tag "@image1" in every shot's prompt to bind to the user's attached reference photo.
-- If there is a secondary character, use "@image2".
-- NEVER invent arbitrary role tags like "@Girl", "@Boy", "@Woman", "@Man", or "@hero" — always use "@image1" for the referenced character.
+CRITICAL STORYBOARD DIRECTING RULES:
+1. Cover the entire narrative arc from start to finish across all ${calculatedShots} shots (Act I: Introduction / Journey, Act II: Conflict / Encounters / Climax, Act III: Resolution / Emotional Departure / Final Horizon).
+2. For the primary main character / performer, ALWAYS use the exact tag "@image1" in every shot's prompt to bind to the user's attached reference photo.
+3. If there is a secondary character, use "@image2".
+4. NEVER invent arbitrary role tags like "@Girl", "@Boy", "@Woman", "@Man", or "@hero" — always use "@image1" for the referenced character.
+5. Provide a diverse progression of shots (establishing wide -> medium tracking -> close-up emotion -> kinetic action -> lingering wide).
 
 Respond ONLY with valid JSON in this exact structure:
 {
   "title": "Movie Title",
-  "logline": "1 sentence punchy logline",
+  "logline": "1-2 sentence punchy logline describing the complete film arc",
   "shots": [
     {
       "order": 1,
-      "title": "Shot Name",
+      "title": "Shot Name / Beat",
       "seconds": 6,
       "camera": "Camera movement description (e.g. 35mm Prime, Slow Push In)",
-      "lighting": "Lighting setup description",
+      "lighting": "Lighting setup description (e.g. Natural 5600K Diffuse Daylight)",
       "prompt": "Full photorealistic shot prompt using @image1 for the referenced character, following physical optics, lighting, texture, and motion rules"
     }
   ]
