@@ -139,7 +139,7 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     '9': { class_type: 'CreateVideo', inputs: { images: ['8a', 0], audio: ['8b', 0], fps } },
     '10': {
       class_type: 'SaveVideo',
-      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'auto' },
+      inputs: { video: ['9', 0], filename_prefix: 'gen/minimax', format: 'auto', codec: 'auto' },
     },
   }
 
@@ -260,7 +260,7 @@ export function buildWorkflow(p: GenParams) {
     '20': { class_type: 'CreateVideo', inputs: { images: ['18a', 0], fps, audio: ['19', 0] } },
     '21': {
       class_type: 'SaveVideo',
-      inputs: { video: ['20', 0], filename_prefix: 'gen/clip', format: 'auto' },
+      inputs: { video: ['20', 0], filename_prefix: 'gen/clip', format: 'auto', codec: 'auto' },
     },
   }
 
