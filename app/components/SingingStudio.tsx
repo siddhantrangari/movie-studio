@@ -1164,6 +1164,58 @@ export default function SingingStudio({
                   </div>
                 )}
 
+                {/* Camera Choreography Pills */}
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', fontWeight: 800 }}>
+                    Camera Move:
+                  </span>
+                  {[
+                    { label: '🔄 360° Orbit Arc', desc: 'Perform a dynamic 360-degree orbital arc shot gliding smoothly around the singer with expressive hand gestures and gentle atmospheric air motion.' },
+                    { label: '👤 Side Profile Track', desc: 'Use a cinematic side-profile tracking glide on an 85mm prime lens, capturing emotional singing with soft background bokeh.' },
+                    { label: '📐 Low Angle Hero', desc: 'Capture from a dramatic low angle tilting upward as the singer projects passionately with cinematic rim light highlighting their silhouette.' },
+                    { label: '🔍 85mm Close-Up', desc: 'Intimate 85mm portrait close-up focused on the singer’s facial micro-expressions, emotive eye contact, and authentic lip delivery.' },
+                    { label: '🦅 Crane Pull-Back', desc: 'Start on a tight close-up and execute an epic sweeping crane pull-back reveal into the surrounding atmosphere.' },
+                    { label: '🚶 Walking Track', desc: 'Execute a smooth stabilized tracking shot moving with the singer as they walk through the environment while delivering lyrics.' },
+                  ].map((cam) => (
+                    <button
+                      key={cam.label}
+                      type="button"
+                      onClick={() => {
+                        setScenes((prev) =>
+                          prev.map((s, i) => {
+                            if (i !== idx) return s
+                            // Clean existing camera clauses and append new camera move
+                            let basePrompt = s.prompt.replace(/(\. Use a cinematic|\. Capture from|\. Perform a dynamic|\. Intimate 85mm|\. Start on a tight|\. Execute a smooth)[^.]*\./gi, '')
+                            return { ...s, prompt: `${basePrompt.trim()} ${cam.desc}` }
+                          })
+                        )
+                        toast.success(`Applied camera move: ${cam.label}`)
+                      }}
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#cbd5e1',
+                        borderRadius: '0.3rem',
+                        padding: '0.2rem 0.45rem',
+                        fontSize: '9.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--gold)'
+                        e.currentTarget.style.color = 'var(--gold)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
+                        e.currentTarget.style.color = '#cbd5e1'
+                      }}
+                    >
+                      {cam.label}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Prompt Textarea */}
                 <textarea
                   value={sc.prompt}
