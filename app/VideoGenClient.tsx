@@ -190,7 +190,25 @@ export default function VideoGenClient() {
   const [colorPalette, setColorPalette] = useState('Auto')
   const [lighting, setLighting] = useState('Auto')
   const [selectedModel, setSelectedModel] = useState<'ltx25' | 'minimax'>('ltx25')
-  const [refImages, setRefImages] = useState<string[]>([])
+  const [refImages, setRefImages] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('movie_studio_ref_images')
+        if (saved) return JSON.parse(saved)
+      } catch {}
+    }
+    return []
+  })
+
+  // Keep attached reference images synced to localStorage across page refreshes
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('movie_studio_ref_images', JSON.stringify(refImages))
+      }
+    } catch {}
+  }, [refImages])
+
   const [savedReferences, setSavedReferences] = useState<{ key: string; filename: string; url: string; createdAt: number }[]>([])
   const [showRefLibraryModal, setShowRefLibraryModal] = useState(false)
   const [refLoading, setRefLoading] = useState(false)
@@ -1475,9 +1493,27 @@ export default function VideoGenClient() {
                             const toAdd = Array.from(files).slice(0, remaining)
                             toAdd.forEach(file => {
                               const reader = new FileReader()
-                              reader.onload = (ev) => {
+                              reader.onload = async (ev) => {
                                 if (ev.target?.result) {
-                                  setRefImages(prev => prev.length < maxRefImages ? [...prev, ev.target!.result as string] : prev)
+                                  const base64 = ev.target.result as string
+                                  setRefImages(prev => prev.length < maxRefImages ? [...prev, base64] : prev)
+                                  // Auto-save permanently to Cloudflare R2 reference media gallery
+                                  try {
+                                    const res = await fetch('/api/videogen/references', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        image: base64,
+                                        filename: file.name,
+                                        projectId: activeProjectId,
+                                      }),
+                                    })
+                                    if (res.ok) {
+                                      loadSavedReferences()
+                                    }
+                                  } catch (err) {
+                                    console.error('Error auto-saving reference to R2:', err)
+                                  }
                                 }
                               }
                               reader.readAsDataURL(file)
