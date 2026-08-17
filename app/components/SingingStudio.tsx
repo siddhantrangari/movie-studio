@@ -436,6 +436,7 @@ export default function SingingStudio({
           model: 'minimax',
           projectId,
           referenceImages: refList,
+          audioFile: songAudioBase64 || undefined,
         }),
       })
 
@@ -463,10 +464,10 @@ export default function SingingStudio({
           return false
         }
 
-        // Timeout check (15 min)
+        // Timeout check (30 min)
         const elapsedSec = (Date.now() - startTime) / 1000
-        if (elapsedSec > 900) {
-          throw new Error('Generation timed out (15 mins exceeded). Please try rendering again.')
+        if (elapsedSec > 1800) {
+          throw new Error('Generation timed out (30 mins exceeded). Please try rendering again.')
         }
 
         const statusRes = await fetch(`/api/videogen/status?promptId=${promptId}&podId=${data.podId || ''}`)

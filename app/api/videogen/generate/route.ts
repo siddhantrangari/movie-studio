@@ -92,6 +92,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let uploadedAudio: string | undefined
+  const rawAudio = body.audioFile || body.audioUrl || body.songAudio
+  if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('data:audio/')) {
+    const matches = rawAudio.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+    if (matches && matches[2]) {
+      const mime = matches[1] || 'audio/mpeg'
+      const ext = mime.includes('wav') ? 'wav' : 'mp3'
+      const buf = Buffer.from(matches[2], 'base64')
+      const fname = `song_${Date.now()}.${ext}`
+      try {
+        uploadedAudio = await uploadImageToPod(podId, buf, fname)
+      } catch (err) {
+        console.error('Error uploading song audio to pod:', err)
+      }
+    }
+  } else if (rawAudio && typeof rawAudio === 'string' && rawAudio.trim()) {
+    uploadedAudio = rawAudio.trim()
+  }
+
   // A character contributes both ways: its portrait seeds the first frame, and
   // its appearance notes lead the prompt.
   let characterDescription: string | undefined
@@ -122,6 +141,7 @@ export async function POST(req: NextRequest) {
     seed,
     referenceImage,
     referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
+    audioFile: uploadedAudio,
     referenceStrength,
   })
 

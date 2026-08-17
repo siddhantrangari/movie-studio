@@ -57,6 +57,8 @@ export type GenParams = {
   referenceImage?: string
   /** Multi-reference images (ComfyUI filenames) - up to 9 for MiniMax, up to 5 for LTX */
   referenceImages?: string[]
+  /** Uploaded audio track filename on pod (e.g. for lip-synced singing videos) */
+  audioFile?: string
   /** How strongly to hold to the reference image, 0-1. */
   referenceStrength?: number
 }
@@ -71,11 +73,15 @@ export function framesForSeconds(seconds: number, fps: number) {
   return Math.max(9, Math.ceil((raw - 1) / 8) * 8 + 1)
 }
 
+export function framesForSecondsMiniMax(seconds: number) {
+  return Math.max(16, Math.ceil(seconds * 24))
+}
+
 export function buildMiniMaxWorkflow(p: GenParams) {
   const targetWidth = p.width ?? 1280
   const targetHeight = p.height ?? 720
   const fps = p.fps ?? 24
-  const frames = Math.max(16, Math.ceil((p.seconds ?? 5) * fps))
+  const frames = framesForSecondsMiniMax(p.seconds ?? 5)
   const seed = p.seed ?? Math.floor(Math.random() * 2 ** 31)
 
   // Adaptive Token-Budget Scaling:
@@ -145,24 +151,37 @@ export function buildMiniMaxWorkflow(p: GenParams) {
     },
   }
 
+  const refInputs: Record<string, unknown> = {
+    clip: ['2', 0],
+    vae: ['3', 0],
+    audio_vae: ['3b', 0],
+    prompt: p.prompt,
+    width: baseWidth,
+    height: baseHeight,
+    length: frames,
+    ref_image_size: 'match',
+  }
+
   const refList = (p.referenceImages && p.referenceImages.length > 0 ? p.referenceImages : (p.referenceImage ? [p.referenceImage] : [])).slice(0, 9)
   if (refList.length > 0) {
     refList.forEach((img, idx) => {
       wf[`6a_${idx}`] = { class_type: 'LoadImage', inputs: { image: img } }
+      refInputs[`ref_images.ref_image_${idx}`] = [`6a_${idx}`, 0]
     })
+  }
+
+  if (p.audioFile) {
+    wf['28'] = { class_type: 'LoadAudio', inputs: { audio: p.audioFile } }
+    refInputs['ref_audios.ref_audio_0'] = ['28', 0]
+    // Mux uploaded song audio directly into the output video for high quality synced vocals
+    const createVid = wf['9'] as { inputs: Record<string, unknown> }
+    createVid.inputs.audio = ['28', 0]
+  }
+
+  if (refList.length > 0 || p.audioFile) {
     wf['6'] = {
       class_type: 'MiniMaxH3ReferenceToVideo',
-      inputs: {
-        clip: ['2', 0],
-        vae: ['3', 0],
-        audio_vae: ['3b', 0],
-        'ref_images.ref_image_0': ['6a_0', 0],
-        prompt: p.prompt,
-        width: baseWidth,
-        height: baseHeight,
-        length: frames,
-        ref_image_size: 'match',
-      },
+      inputs: refInputs,
     }
     // MiniMaxH3ReferenceToVideo outputs:
     // Output 0: positive (CONDITIONING)
