@@ -92,19 +92,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 2. Check Cloudflare R2 if configured
-  if (isR2Configured()) {
-    try {
-      const url = await signedUrl(filename, 3600)
-      if (url) {
-        return NextResponse.redirect(url, { status: 307 })
-      }
-    } catch {
-      // Continue to pod fetch
-    }
-  }
-
-  // 3. If pod is running, fetch from pod, persist to local disk, and stream
+  // 2. If GPU pod is running, fetch directly from pod, save to local disk & R2, and stream
   const podId = (await getRunningPodId('ltx25')) || (await getRunningPodId('minimax'))
   if (podId) {
     try {
@@ -118,7 +106,19 @@ export async function GET(req: NextRequest) {
         }
       }
     } catch (err) {
-      console.error('Failed to proxy video from pod:', err)
+      console.error('[Video Proxy Error] Failed to fetch video from pod:', err)
+    }
+  }
+
+  // 3. Fallback: check Cloudflare R2 if pod is offline
+  if (isR2Configured()) {
+    try {
+      const url = await signedUrl(filename, 3600)
+      if (url) {
+        return NextResponse.redirect(url, { status: 307 })
+      }
+    } catch {
+      // Continue to 404
     }
   }
 

@@ -268,7 +268,7 @@ export default function VideoGenClient() {
   const [submitting, setSubmitting] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
-  const [failedVideos, setFailedVideos] = useState<Record<string, boolean>>({})
+  const [failedVideos, setFailedVideos] = useState<Record<string, number>>({})
   const [initialLoading, setInitialLoading] = useState(true)
 
   // ── @ Mention Autocomplete State & Logic ──
@@ -1627,14 +1627,26 @@ export default function VideoGenClient() {
                         }}
                       >
                         {/* Thumbnail / video area */}
-                        {j.state === 'done' && j.filename && !failedVideos[j.id] ? (
+                        {j.state === 'done' && j.filename && (failedVideos[j.id] ?? 0) < 4 ? (
                           <video
                             src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
                             controls loop playsInline autoPlay muted preload="metadata"
-                            onError={() => setFailedVideos(prev => ({ ...prev, [j.id]: true }))}
+                            onError={(e) => {
+                              const attempts = (failedVideos[j.id] || 0) + 1
+                              setFailedVideos(prev => ({ ...prev, [j.id]: attempts }))
+                              if (attempts < 4) {
+                                const videoEl = e.currentTarget
+                                setTimeout(() => {
+                                  if (videoEl && j.filename) {
+                                    videoEl.src = `/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}&retry=${attempts}&t=${Date.now()}`
+                                    videoEl.load()
+                                  }
+                                }, 2000)
+                              }
+                            }}
                             style={{ width: '100%', height: '160px', objectFit: 'cover', background: '#000' }}
                           />
-                        ) : failedVideos[j.id] ? (
+                        ) : (failedVideos[j.id] ?? 0) >= 4 ? (
                           <div style={{ height: '160px', background: '#070c14', padding: '0.75rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', textAlign: 'center', borderBottom: '1px solid #1a2840' }}>
                             <span style={{ fontSize: '1.25rem' }}>⚠️</span>
                             <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 800 }}>Clip Expired (Previous Pod)</span>
@@ -1878,14 +1890,26 @@ export default function VideoGenClient() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
                         {jobs.map(j => (
                           <div key={j.id} style={{ background: '#0e182e', border: '1px solid #1a2840', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            {j.state === 'done' && j.filename && !failedVideos[j.id] ? (
+                            {j.state === 'done' && j.filename && (failedVideos[j.id] ?? 0) < 4 ? (
                               <video
                                 src={`/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}`}
                                 controls loop playsInline preload="metadata"
-                                onError={() => setFailedVideos(prev => ({ ...prev, [j.id]: true }))}
+                                onError={(e) => {
+                                  const attempts = (failedVideos[j.id] || 0) + 1
+                                  setFailedVideos(prev => ({ ...prev, [j.id]: attempts }))
+                                  if (attempts < 4) {
+                                    const videoEl = e.currentTarget
+                                    setTimeout(() => {
+                                      if (videoEl && j.filename) {
+                                        videoEl.src = `/api/videogen/video?filename=${encodeURIComponent(j.filename)}&subfolder=${encodeURIComponent(j.subfolder ?? 'gen')}&retry=${attempts}&t=${Date.now()}`
+                                        videoEl.load()
+                                      }
+                                    }, 2000)
+                                  }
+                                }}
                                 style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '0.5rem', background: '#000' }}
                               />
-                            ) : failedVideos[j.id] ? (
+                            ) : (failedVideos[j.id] ?? 0) >= 4 ? (
                               <div style={{ height: '160px', background: '#070c14', borderRadius: '0.5rem', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', textAlign: 'center', border: '1px dashed rgba(232,185,74,0.3)' }}>
                                 <span style={{ fontSize: '1.25rem' }}>⚠️</span>
                                 <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: 800 }}>Clip Expired (Previous Pod)</span>
